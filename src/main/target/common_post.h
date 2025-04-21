@@ -651,3 +651,8 @@ extern uint8_t __config_end;
 #define USE_PIN_PULL_UP_DOWN
 #endif
 #endif // USE_PINIO
+
+// Flyby MSP PUSH
+#ifndef USE_MSP_PUSH
+#define USE_MSP_PUSH
+#endif

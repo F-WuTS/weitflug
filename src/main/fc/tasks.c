@@ -75,6 +75,7 @@
 
 #include "msp/msp.h"
 #include "msp/msp_serial.h"
+#include "msp/msp_push.h"
 
 #include "osd/osd.h"
 
@@ -454,6 +455,10 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_RC_STATS] = DEFINE_TASK("RC_STATS", NULL, NULL, rcStatsUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
 #endif
 
+#ifdef USE_MSP_PUSH
+    [TASK_MSP_PUSH] = DEFINE_TASK("MSP_PUSH", NULL, NULL, taskHandleMspPush, TASK_PERIOD_HZ(500), TASK_PRIORITY_LOW),
+#endif
+
 };
 
 task_t *getTask(unsigned taskId)
@@ -628,5 +633,9 @@ void tasksInit(void)
 
 #ifdef USE_RC_STATS
     setTaskEnabled(TASK_RC_STATS, true);
+#endif
+
+#ifdef USE_MSP_PUSH
+    setTaskEnabled(TASK_MSP_PUSH, true);
 #endif
 }

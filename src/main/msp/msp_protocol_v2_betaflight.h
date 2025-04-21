@@ -29,6 +29,7 @@
 #define MSP2_GET_LED_STRIP_CONFIG_VALUES    0x3008
 #define MSP2_SET_LED_STRIP_CONFIG_VALUES    0x3009
 #define MSP2_SENSOR_CONFIG_ACTIVE           0x300A
+#define MSP2_PUSH                           0x300B    //  Specific data sent to the host without waiting for a request
 
 // MSP2_SET_TEXT and MSP2_GET_TEXT variable types
 #define MSP2TEXT_PILOT_NAME                      1

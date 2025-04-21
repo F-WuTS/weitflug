@@ -572,7 +572,7 @@ void mspSerialInit(void)
     mspSerialAllocatePorts();
 }
 
-int mspSerialPush(serialPortIdentifier_e port, uint8_t cmd, uint8_t *data, int datalen, mspDirection_e direction, mspVersion_e mspVersion)
+int mspSerialPush(serialPortIdentifier_e port, int16_t cmd, uint8_t *data, int datalen, mspDirection_e direction, mspVersion_e mspVersion)
 {
     int ret = 0;
 
