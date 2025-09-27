@@ -4,6 +4,6 @@ in
 
 pkgs.mkShell {
   nativeBuildInputs = [
-    pkgs.gcc-arm-embedded-10
+    pkgs.gcc-arm-embedded
   ];
 }

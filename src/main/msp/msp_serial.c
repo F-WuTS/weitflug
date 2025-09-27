@@ -600,6 +600,20 @@ int mspSerialPush(serialPortIdentifier_e port, int16_t cmd, uint8_t *data, int d
     return ret; // return the number of bytes written
 }
 
+int mspSerialPush2(serialPortIdentifier_e port, mspPacket_t *packet, mspVersion_e mspVersion)
+{
+    int ret = 0;
+
+    for (int portIndex = 0; portIndex < MAX_MSP_PORT_COUNT; portIndex++) {
+        mspPort_t * const mspPort = &mspPorts[portIndex];
+        if (mspPort->port->identifier != port) {
+            continue;
+        }
+
+        ret = mspSerialEncode(mspPort, packet, mspVersion);
+    }
+    return ret; // return the number of bytes written
+}
 
 uint32_t mspSerialTxBytesFree(void)
 {
