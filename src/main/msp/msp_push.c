@@ -27,8 +27,6 @@
 #define ACTIVE_GYRO (&gyro.gyroSensor1)
 #endif
 
-#define DECIDEGREES_TO_DEGREES(angle) ((angle) / 10)
-
 /*
  * Instead of request/response, we use a push model for certain MSP commands.
  * Sends data to the host without waiting for a request.
@@ -73,7 +71,7 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
 
         sbufWriteU16(&reply.buf, attitude.values.roll);
         sbufWriteU16(&reply.buf, attitude.values.pitch);
-        sbufWriteU16(&reply.buf, DECIDEGREES_TO_DEGREES(attitude.values.yaw));
+        sbufWriteU16(&reply.buf, attitude.values.yaw);
 
         // See rc_controls.h for the definition of rcData
         sbufWriteU16(&reply.buf, rcData[ROLL]);
