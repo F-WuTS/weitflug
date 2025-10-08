@@ -2685,6 +2685,8 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
                     frame[i] = sbufReadU16(src);
                 }
                 rxMspFrameReceive(frame, channelCount);
+
+                return MSP_RESULT_NO_REPLY;
             }
         }
 #endif

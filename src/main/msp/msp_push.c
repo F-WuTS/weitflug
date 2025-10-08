@@ -46,52 +46,23 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     };
     uint8_t *outBufHead = reply.buf.ptr;
 
-    // This function is executed with 360Hz
-    // 60 and 120Hz data also includes the 360Hz data
-
-    static int counter = 0;
-    counter = (counter + 1) % 8;
+    // static int counter = 0;
+    // counter = (counter + 1) % 8;
 
     // Timestamp (used for latency measurements)
     sbufWriteU32(&reply.buf, currentTimeUs);
 
-    // 480Hz data
-    reply.cmd = MSP2_PUSH_480;
+    reply.cmd = MSP2_PUSH_FAST;
     sbufWriteU16(&reply.buf, lrintf(acc.accADC[0]));
     sbufWriteU16(&reply.buf, lrintf(acc.accADC[1]));
     sbufWriteU16(&reply.buf, lrintf(acc.accADC[2]));
 
-    sbufWriteU16(&reply.buf, lrintf(gyro.gyroADCf[0] / ACTIVE_GYRO->gyroDev.scale));
-    sbufWriteU16(&reply.buf, lrintf(gyro.gyroADCf[1] / ACTIVE_GYRO->gyroDev.scale));
-    sbufWriteU16(&reply.buf, lrintf(gyro.gyroADCf[2] / ACTIVE_GYRO->gyroDev.scale));
+    sbufWriteU16(&reply.buf, attitude.values.roll);
+    sbufWriteU16(&reply.buf, attitude.values.pitch);
+    sbufWriteU16(&reply.buf, attitude.values.yaw);
 
-    // 120Hz data
-    if (counter == 1 || counter == 5) {
-        reply.cmd = MSP2_PUSH_120;
-
-        sbufWriteU16(&reply.buf, attitude.values.roll);
-        sbufWriteU16(&reply.buf, attitude.values.pitch);
-        sbufWriteU16(&reply.buf, attitude.values.yaw);
-
-        // See rc_controls.h for the definition of rcData
-        sbufWriteU16(&reply.buf, rcData[ROLL]);
-        sbufWriteU16(&reply.buf, rcData[PITCH]);
-        sbufWriteU16(&reply.buf, rcData[YAW]);
-        sbufWriteU16(&reply.buf, rcData[THROTTLE]);
-        sbufWriteU16(&reply.buf, rcData[AUX1]);
-        sbufWriteU16(&reply.buf, rcData[AUX2]);
-    }
-
-    // 60Hz data
-    if (counter == 0) {
-        reply.cmd = MSP2_PUSH_60;
-
-        sbufWriteU32(&reply.buf, getEstimatedAltitudeCm());
-        sbufWriteU16(&reply.buf, getEstimatedVario());
-
-        sbufWriteU16(&reply.buf, getBatteryVoltage());
-        sbufWriteU16(&reply.buf, (int16_t)constrain(getAmperage(), -0x8000, 0x7FFF));
-    }
+    sbufWriteU16(&reply.buf, rcData[AUX2]);
+    sbufWriteU16(&reply.buf, getBatteryVoltage());
 
     sbufSwitchToReader(&reply.buf, outBufHead);
     mspSerialPush2(SERIAL_PORT_USART3, &reply, MSP_V2_NATIVE);
