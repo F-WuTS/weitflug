@@ -652,7 +652,7 @@ extern uint8_t __config_end;
 #endif
 #endif // USE_PINIO
 
-// Flyby MSP PUSH
-#ifndef USE_MSP_PUSH
-#define USE_MSP_PUSH
+// Flyby Serial Protocol
+#ifndef USE_FSP
+#define USE_FSP
 #endif
