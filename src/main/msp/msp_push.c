@@ -61,7 +61,11 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     sbufWriteU16(&reply.buf, attitude.values.pitch);
     sbufWriteU16(&reply.buf, attitude.values.yaw);
 
-    sbufWriteU16(&reply.buf, rcData[AUX2]);
+    sbufWriteU16(&reply.buf, rcData[ROLL]);
+    sbufWriteU16(&reply.buf, rcData[PITCH]);
+    sbufWriteU16(&reply.buf, rcData[YAW]);
+    sbufWriteU16(&reply.buf, rcData[THROTTLE]);
+
     sbufWriteU16(&reply.buf, getBatteryVoltage());
 
     sbufSwitchToReader(&reply.buf, outBufHead);
