@@ -124,7 +124,7 @@ void mpu6000SpiGyroInit(gyroDev_t *gyro)
 
 void mpu6000SpiAccInit(accDev_t *acc)
 {
-    acc->acc_1G = 512 * 4;
+    acc->acc_1G = 512 * 8;
 }
 
 uint8_t mpu6000SpiDetect(const extDevice_t *dev)
@@ -188,12 +188,12 @@ static void mpu6000AccAndGyroInit(gyroDev_t *gyro)
     spiWriteReg(dev, MPU_RA_SMPLRT_DIV, gyro->mpuDividerDrops);
     delayMicroseconds(15);
 
-    // Gyro +/- 2000 DPS Full Scale
-    spiWriteReg(dev, MPU_RA_GYRO_CONFIG, INV_FSR_2000DPS << 3);
+    // Gyro +/- 1000 DPS Full Scale
+    spiWriteReg(dev, MPU_RA_GYRO_CONFIG, INV_FSR_1000DPS << 3);
     delayMicroseconds(15);
 
-    // Accel +/- 16 G Full Scale
-    spiWriteReg(dev, MPU_RA_ACCEL_CONFIG, INV_FSR_16G << 3);
+    // Accel +/- 8 G Full Scale
+    spiWriteReg(dev, MPU_RA_ACCEL_CONFIG, INV_FSR_8G << 3);
     delayMicroseconds(15);
 
     spiWriteReg(dev, MPU_RA_INT_PIN_CFG, 0 << 7 | 0 << 6 | 0 << 5 | 1 << 4 | 0 << 3 | 0 << 2 | 0 << 1 | 0 << 0);  // INT_ANYRD_2CLEAR
@@ -223,7 +223,7 @@ bool mpu6000SpiGyroDetect(gyroDev_t *gyro)
 
     gyro->initFn = mpu6000SpiGyroInit;
     gyro->readFn = mpuGyroReadSPI;
-    gyro->scale = GYRO_SCALE_2000DPS;
+    gyro->scale = GYRO_SCALE_1000DPS;
     gyro->gyroShortPeriod = clockMicrosToCycles(MPU6000_SHORT_THRESHOLD);
 
     return true;

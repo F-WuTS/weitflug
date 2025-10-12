@@ -46,8 +46,14 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     };
     uint8_t *outBufHead = reply.buf.ptr;
 
-    // static int counter = 0;
-    // counter = (counter + 1) % 8;
+    // Calculate the attitude in 0.001 degree units. 180 deg = 18000
+    int16_t roll = lrintf(atan2_approx(rMat[2][1], rMat[2][2]) * (18000.0f / M_PIf));
+    int16_t pitch = lrintf(((0.5f * M_PIf) - acos_approx(-rMat[2][0])) * (18000.0f / M_PIf));
+    int16_t yaw = lrintf((-atan2_approx(rMat[1][0], rMat[0][0]) * (18000.0f / M_PIf)));
+
+    if (yaw < 0) {
+        yaw += 36000;
+    }
 
     // Timestamp (used for latency measurements)
     sbufWriteU32(&reply.buf, currentTimeUs);
@@ -57,14 +63,14 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     sbufWriteU16(&reply.buf, lrintf(acc.accADC[1]));
     sbufWriteU16(&reply.buf, lrintf(acc.accADC[2]));
 
-    sbufWriteU16(&reply.buf, attitude.values.roll);
-    sbufWriteU16(&reply.buf, attitude.values.pitch);
-    sbufWriteU16(&reply.buf, attitude.values.yaw);
+    sbufWriteU16(&reply.buf, roll);
+    sbufWriteU16(&reply.buf, pitch);
+    sbufWriteU16(&reply.buf, yaw);
 
-    sbufWriteU16(&reply.buf, rcData[ROLL]);
-    sbufWriteU16(&reply.buf, rcData[PITCH]);
-    sbufWriteU16(&reply.buf, rcData[YAW]);
-    sbufWriteU16(&reply.buf, rcData[THROTTLE]);
+    // sbufWriteU16(&reply.buf, rcData[ROLL]);
+    // sbufWriteU16(&reply.buf, rcData[PITCH]);
+    // sbufWriteU16(&reply.buf, rcData[YAW]);
+    // sbufWriteU16(&reply.buf, rcData[THROTTLE]);
 
     sbufWriteU16(&reply.buf, getBatteryVoltage());
 
