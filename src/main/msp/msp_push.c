@@ -4,6 +4,7 @@
 #include "common/streambuf.h"
 
 #include "sensors/acceleration.h"
+#include "sensors/gyro_init.h"
 #include "sensors/gyro.h"
 #include "sensors/battery.h"
 #include "sensors/esc_sensor.h"
@@ -63,14 +64,23 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     sbufWriteU16(&reply.buf, lrintf(acc.accADC[1]));
     sbufWriteU16(&reply.buf, lrintf(acc.accADC[2]));
 
+    sbufWriteU16(&reply.buf, gyroRateDps(0));
+    sbufWriteU16(&reply.buf, gyroRateDps(1));
+    sbufWriteU16(&reply.buf, gyroRateDps(2));
+
     sbufWriteU16(&reply.buf, roll);
     sbufWriteU16(&reply.buf, pitch);
     sbufWriteU16(&reply.buf, yaw);
 
-    // sbufWriteU16(&reply.buf, rcData[ROLL]);
-    // sbufWriteU16(&reply.buf, rcData[PITCH]);
-    // sbufWriteU16(&reply.buf, rcData[YAW]);
-    // sbufWriteU16(&reply.buf, rcData[THROTTLE]);
+    sbufWriteU16(&reply.buf, rcData[ROLL]);
+    sbufWriteU16(&reply.buf, rcData[PITCH]);
+    sbufWriteU16(&reply.buf, rcData[YAW]);
+    sbufWriteU16(&reply.buf, rcData[THROTTLE]);
+
+    sbufWriteU16(&reply.buf, getDshotRpm(0));
+    sbufWriteU16(&reply.buf, getDshotRpm(1));
+    sbufWriteU16(&reply.buf, getDshotRpm(2));
+    sbufWriteU16(&reply.buf, getDshotRpm(3));
 
     sbufWriteU16(&reply.buf, getBatteryVoltage());
 

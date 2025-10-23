@@ -37,75 +37,42 @@ void taskFspTx(timeUs_t currentTimeUs)
 {
     UNUSED(currentTimeUs);
 
-    // uint32_t current_time_us = currentTimeUs;
+    uint32_t current_time_us = currentTimeUs;
 
-    // uint16_t acc_x = lrintf(acc.accADC[0]);
-    // uint16_t acc_y = lrintf(acc.accADC[1]);
-    // uint16_t acc_z = lrintf(acc.accADC[2]);
+    uint16_t acc_x = lrintf(acc.accADC[0]);
+    uint16_t acc_y = lrintf(acc.accADC[1]);
+    uint16_t acc_z = lrintf(acc.accADC[2]);
 
-    // uint16_t att_roll = attitude.values.roll;
-    // uint16_t att_pitch = attitude.values.pitch;
-    // uint16_t att_yaw = attitude.values.yaw;
+    int16_t roll = lrintf(atan2_approx(rMat[2][1], rMat[2][2]) * (18000.0f / M_PIf));
+    int16_t pitch = lrintf(((0.5f * M_PIf) - acos_approx(-rMat[2][0])) * (18000.0f / M_PIf));
+    int16_t yaw = lrintf((-atan2_approx(rMat[1][0], rMat[0][0]) * (18000.0f / M_PIf)));
 
-    // uint16_t battery = getBatteryVoltage();
-    // // Scale battery voltage (mV) from 21000-24000mV range to 0-255
-    // uint8_t battery_scaled =
-    //     (battery <= 2100)
-    //         ? 0
-    //         : ((battery >= 2600) ? 255
-    //                              : (uint8_t)(((battery - 2100) * 255) / 500));
-
-    // uint8_t frame[] = {
-    //     0xFF, // Frame start marker
-    //     current_time_us & 0xFF,
-    //     (current_time_us >> 8) & 0xFF,
-    //     (current_time_us >> 16) & 0xFF,
-    //     (current_time_us >> 24) & 0xFF,
-    //     acc_x & 0xFF,
-    //     (acc_x >> 8) & 0xFF,
-    //     acc_y & 0xFF,
-    //     (acc_y >> 8) & 0xFF,
-    //     acc_z & 0xFF,
-    //     (acc_z >> 8) & 0xFF,
-    //     att_roll & 0xFF,
-    //     (att_roll >> 8) & 0xFF,
-    //     att_pitch & 0xFF,
-    //     (att_pitch >> 8) & 0xFF,
-    //     att_yaw & 0xFF,
-    //     (att_yaw >> 8) & 0xFF,
-    //     battery_scaled & 0xFF,
-    //     0x00, // TODO: Placeholder for Checksum / CRC
-    //     0xFE // Frame end marker
-    // };
-
-    uint32_t debug = 0;
-
-    if (!isSerialTransmitBufferEmpty(fspPort) && ((int)serialTxBytesFree(fspPort) < 20)) {
-        debug = 1; // TX buffer full
+    if (yaw < 0) {
+        yaw += 36000;
     }
 
+    uint16_t battery = getBatteryVoltage();
 
-
-    // Testing Frame to test throughput, drops and bit flips.
     uint8_t frame[] = {
         0xFF, // Frame start marker
-        debug & 0xFF,
-        (debug >> 8) & 0xFF,
-        (debug >> 16) & 0xFF,
-        (debug >> 24) & 0xFF,
-        0xA0,
-        0xA1,
-        0xA2,
-        0xA3,
-        0xA4,
-        0xA5,
-        0xA6,
-        0xA7,
-        0xA8,
-        0xA9,
-        0xAA,
-        0xAB,
-        0xAC,
+        current_time_us & 0xFF,
+        (current_time_us >> 8) & 0xFF,
+        (current_time_us >> 16) & 0xFF,
+        (current_time_us >> 24) & 0xFF,
+        acc_x & 0xFF,
+        (acc_x >> 8) & 0xFF,
+        acc_y & 0xFF,
+        (acc_y >> 8) & 0xFF,
+        acc_z & 0xFF,
+        (acc_z >> 8) & 0xFF,
+        roll & 0xFF,
+        (roll >> 8) & 0xFF,
+        pitch & 0xFF,
+        (pitch >> 8) & 0xFF,
+        yaw & 0xFF,
+        (yaw >> 8) & 0xFF,
+        battery & 0xFF,
+        (battery >> 8) & 0xFF,
         0x00, // TODO: Placeholder for Checksum / CRC
         0xFE // Frame end marker
     };
