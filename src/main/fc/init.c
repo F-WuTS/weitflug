@@ -133,8 +133,6 @@
 #include "msp/msp.h"
 #include "msp/msp_serial.h"
 
-#include "fsp/fsp.h"
-
 #include "osd/osd.h"
 
 #include "pg/adc.h"
@@ -875,9 +873,6 @@ void init(void)
     // Initialize MSP
     mspInit();
     mspSerialInit();
-
-    // Initialize Flyby Serial Protocol
-    fspInit();
 
 /*
  * CMS, display devices and OSD

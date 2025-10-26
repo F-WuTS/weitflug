@@ -77,8 +77,6 @@
 #include "msp/msp_serial.h"
 #include "msp/msp_push.h"
 
-#include "fsp/fsp.h"
-
 #include "osd/osd.h"
 
 #include "pg/rx.h"
@@ -460,10 +458,6 @@ task_attribute_t task_attributes[TASK_COUNT] = {
 #ifdef USE_MSP_PUSH
     [TASK_MSP_PUSH] = DEFINE_TASK("MSP_PUSH", NULL, NULL, taskHandleMspPush, TASK_PERIOD_HZ(480), TASK_PRIORITY_LOW),
 #endif
-#ifdef USE_FSP
-    [TASK_FSP_TX] = DEFINE_TASK("FSP_TX", NULL, NULL, taskFspTx, TASK_PERIOD_HZ(480), TASK_PRIORITY_MEDIUM),
-    [TASK_FSP_RX] = DEFINE_TASK("FSP_RX", NULL, NULL, taskFspRx, TASK_PERIOD_HZ(120), TASK_PRIORITY_LOW),
-#endif
 
 };
 
@@ -646,8 +640,4 @@ void tasksInit(void)
     setTaskEnabled(TASK_MSP_PUSH, true);
 #endif
 
-#ifdef USE_FSP
-    setTaskEnabled(TASK_FSP_TX, true);
-    setTaskEnabled(TASK_FSP_RX, false);
-#endif
 }
