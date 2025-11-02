@@ -264,7 +264,7 @@ void pidInit(const pidProfile_t *pidProfile)
     pidInitFilters(pidProfile);
     pidInitConfig(pidProfile);
 #ifdef USE_RPM_FILTER
-    rpmFilterInit(rpmFilterConfig(), gyro.targetLooptime);
+    rpmFilterInit(rpmFilterConfig(), gyro.targetLooptime, 0);
 #endif
 }
 

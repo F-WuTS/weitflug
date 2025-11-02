@@ -26,7 +26,7 @@
 
 #include "pg/rpm_filter.h"
 
-void rpmFilterInit(const rpmFilterConfig_t *config, const timeUs_t looptimeUs);
-void rpmFilterUpdate(void);
-float rpmFilterApply(const int axis, float value);
-bool isRpmFilterEnabled(void);
+void rpmFilterInit(const rpmFilterConfig_t *config, const timeUs_t looptimeUs, const int instance);
+void rpmFilterUpdate(const int instance);
+float rpmFilterApply(const int axis, float value, const int instance);
+bool isRpmFilterEnabled(const int instance);

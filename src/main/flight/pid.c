@@ -881,7 +881,7 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
     rotateItermAndAxisError();
 
 #ifdef USE_RPM_FILTER
-    rpmFilterUpdate();
+    rpmFilterUpdate(0);
 #endif
 
     // ----------PID controller----------
