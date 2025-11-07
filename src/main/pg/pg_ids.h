@@ -156,8 +156,8 @@
 #define PG_SCHEDULER_CONFIG         556
 #define PG_MSP_CONFIG               557
 #define PG_SOFTSERIAL_PIN_CONFIG    558
-#define PG_BETAFLIGHT_END           558
-
+#define PG_ACC_RPM_FILTER_CONFIG    559
+#define PG_BETAFLIGHT_END           559
 
 // OSD configuration (subject to change)
 #define PG_OSD_FONT_CONFIG 2047

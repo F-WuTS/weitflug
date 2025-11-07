@@ -39,3 +39,4 @@ typedef struct rpmFilterConfig_s
 } rpmFilterConfig_t;
 
 PG_DECLARE(rpmFilterConfig_t, rpmFilterConfig);
+PG_DECLARE(rpmFilterConfig_t, accRpmFilterConfig);

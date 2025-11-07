@@ -37,6 +37,8 @@
 #include "sensors/acceleration_init.h"
 #include "sensors/boardalignment.h"
 
+#include "flight/rpm_filter.h"
+
 #include "acceleration.h"
 
 FAST_DATA_ZERO_INIT acc_t acc;                       // acc access functions
@@ -82,6 +84,13 @@ void accUpdate(timeUs_t currentTimeUs)
         const float val = acc.accADC[axis];
         acc.accADC[axis] = accelerationRuntime.accLpfCutHz ? pt2FilterApply(&accelerationRuntime.accFilter[axis], val) : val;
     }
+
+#ifdef USE_ACC_RPM_FILTER
+    for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+        acc.accADCf[axis] = rpmFilterApply(axis, acc.accADC[axis], 1);
+        DEBUG_SET(DEBUG_ACCELEROMETER, axis, acc.accADCf[axis]);
+    }
+#endif
 }
 
 #endif

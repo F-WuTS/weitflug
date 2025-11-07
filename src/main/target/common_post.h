@@ -661,3 +661,8 @@ extern uint8_t __config_end;
 #ifndef USE_MSP_PUSH
 #define USE_MSP_PUSH
 #endif
+
+// Accelerometer RPM Filter
+#ifndef USE_ACC_RPM_FILTER
+#define USE_ACC_RPM_FILTER
+#endif

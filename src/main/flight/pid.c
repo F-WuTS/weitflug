@@ -884,6 +884,10 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
     rpmFilterUpdate(0);
 #endif
 
+#ifdef USE_ACC_RPM_FILTER
+    rpmFilterUpdate(1);
+#endif
+
     // ----------PID controller----------
     for (int axis = FD_ROLL; axis <= FD_YAW; ++axis) {
 

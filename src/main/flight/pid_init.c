@@ -42,6 +42,7 @@
 
 #include "rx/rx.h"
 
+#include "sensors/acceleration.h"
 #include "sensors/gyro.h"
 #include "sensors/sensors.h"
 
@@ -253,6 +254,10 @@ void pidInitFilters(const pidProfile_t *pidProfile)
         pt3FilterInit(&pidRuntime.angleFeedforwardPt3[axis], k2);
     }
     pidRuntime.angleYawSetpoint = 0.0f;
+#endif
+
+#ifdef USE_ACC_RPM_FILTER
+    rpmFilterInit(accRpmFilterConfig(), acc.sampleRateHz, 1);
 #endif
 
     pt2FilterInit(&pidRuntime.antiGravityLpf, pt2FilterGain(pidProfile->anti_gravity_cutoff_hz, pidRuntime.dT));
