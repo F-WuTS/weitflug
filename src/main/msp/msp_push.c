@@ -60,9 +60,9 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     sbufWriteU32(&reply.buf, currentTimeUs);
 
     reply.cmd = MSP2_PUSH_FAST;
-    sbufWriteU16(&reply.buf, lrintf(acc.accADC[0]));
-    sbufWriteU16(&reply.buf, lrintf(acc.accADC[1]));
-    sbufWriteU16(&reply.buf, lrintf(acc.accADC[2]));
+    sbufWriteU16(&reply.buf, lrintf(acc.accADCf[0]));
+    sbufWriteU16(&reply.buf, lrintf(acc.accADCf[1]));
+    sbufWriteU16(&reply.buf, lrintf(acc.accADCf[2]));
 
     sbufWriteU16(&reply.buf, gyroRateDps(0));
     sbufWriteU16(&reply.buf, gyroRateDps(1));
