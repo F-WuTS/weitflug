@@ -40,7 +40,7 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
 
     mspPacket_t reply = {
         .buf = { .ptr = mspSerialOutBuf, .end = ARRAYEND(mspSerialOutBuf), },
-        .cmd = -1,
+        .cmd = MSP2_PUSH_FAST,
         .flags = 0,
         .result = 0,
         .direction = MSP_DIRECTION_REPLY,
@@ -56,10 +56,8 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
         yaw += 36000;
     }
 
-    // Timestamp (used for latency measurements)
     sbufWriteU32(&reply.buf, currentTimeUs);
 
-    reply.cmd = MSP2_PUSH_FAST;
     sbufWriteU16(&reply.buf, lrintf(acc.accADCf[0]));
     sbufWriteU16(&reply.buf, lrintf(acc.accADCf[1]));
     sbufWriteU16(&reply.buf, lrintf(acc.accADCf[2]));

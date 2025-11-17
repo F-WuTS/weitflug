@@ -21,6 +21,7 @@
 #pragma once
 
 #include "common/streambuf.h"
+#include <stdint.h>
 
 #define MSP_V2_FRAME_ID         255
 
