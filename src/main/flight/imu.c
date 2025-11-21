@@ -450,7 +450,7 @@ static float imuCalcGroundspeedGain(float dt)
     }
 
     // NOTE : these suppressions make sense with normal pilot inputs and normal flight
-    // They are not used in GPS Rescue, and probably should be bypassed in position hold, etc, 
+    // They are not used in GPS Rescue, and probably should be bypassed in position hold, etc,
 
     return speedBasedGain * stickSuppression * rollSuppression * pitchSuppression;
 }
@@ -687,11 +687,11 @@ static void imuCalculateEstimatedAttitude(timeUs_t currentTimeUs)
         gyroAverage[axis] = gyroGetFilteredDownsampled(axis);
     }
 
-    const bool useAcc = imuIsAccelerometerHealthy(acc.accADC); // all smoothed accADC values are within 20% of 1G
+    const bool useAcc = imuIsAccelerometerHealthy(acc.accADCf); // all smoothed accADC values are within 20% of 1G
 
     imuMahonyAHRSupdate(dt,
                         DEGREES_TO_RADIANS(gyroAverage[X]), DEGREES_TO_RADIANS(gyroAverage[Y]), DEGREES_TO_RADIANS(gyroAverage[Z]),
-                        useAcc, acc.accADC[X], acc.accADC[Y], acc.accADC[Z],
+                        useAcc, acc.accADCf[X], acc.accADCf[Y], acc.accADCf[Z],
                         magErr, cogErr,
                         imuCalcKpGain(currentTimeUs, useAcc, gyroAverage));
 

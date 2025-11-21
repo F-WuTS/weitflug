@@ -257,7 +257,7 @@ void pidInitFilters(const pidProfile_t *pidProfile)
 #endif
 
 #ifdef USE_ACC_RPM_FILTER
-    rpmFilterInit(accRpmFilterConfig(), acc.sampleRateHz, 1);
+    rpmFilterInit(accRpmFilterConfig(), acc.sampleRateHz, RPM_FILTER_ACCEL);
 #endif
 
     pt2FilterInit(&pidRuntime.antiGravityLpf, pt2FilterGain(pidProfile->anti_gravity_cutoff_hz, pidRuntime.dT));
@@ -269,7 +269,7 @@ void pidInit(const pidProfile_t *pidProfile)
     pidInitFilters(pidProfile);
     pidInitConfig(pidProfile);
 #ifdef USE_RPM_FILTER
-    rpmFilterInit(rpmFilterConfig(), gyro.targetLooptime, 0);
+    rpmFilterInit(rpmFilterConfig(), gyro.targetLooptime, RPM_FILTER_GYRO);
 #endif
 }
 

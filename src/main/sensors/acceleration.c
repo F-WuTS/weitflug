@@ -87,7 +87,9 @@ void accUpdate(timeUs_t currentTimeUs)
 
 #ifdef USE_ACC_RPM_FILTER
     for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-        acc.accADCf[axis] = rpmFilterApply(axis, acc.accADC[axis], 1);
+        acc.accADCf[axis] = rpmFilterApply(axis, acc.accADC[axis], RPM_FILTER_ACCEL);
+        acc.accADCf[axis] = accelerationRuntime.notchFilterApplyFn((filter_t *)&accelerationRuntime.notchFilter[axis], acc.accADCf[axis]);
+
         DEBUG_SET(DEBUG_ACCELEROMETER, axis, acc.accADCf[axis]);
     }
 #endif

@@ -370,6 +370,15 @@ retry:
     return true;
 }
 
+static uint16_t hzToMicroseconds(uint16_t hz)
+{
+    if (hz == 0) {
+        return 0;
+    }
+
+    return 1000000 / hz;
+}
+
 void accInitFilters(void)
 {
     // Only set the lowpass cutoff if the ACC sample rate is detected otherwise
@@ -379,6 +388,20 @@ void accInitFilters(void)
         const float k = pt2FilterGain(accelerationRuntime.accLpfCutHz, 1.0f / acc.sampleRateHz);
         for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
             pt2FilterInit(&accelerationRuntime.accFilter[axis], k);
+        }
+    }
+
+    accelerationRuntime.notchFilterApplyFn = nullFilterApply;
+
+    uint16_t notchHz = accelerometerConfig()->acc_soft_notch_hz;
+    uint16_t notchCutoffHz = accelerometerConfig()->acc_soft_notch_cutoff;
+
+    if (notchHz != 0 && notchCutoffHz != 0) {
+        accelerationRuntime.notchFilterApplyFn = (filterApplyFnPtr)biquadFilterApply;
+
+        const float notchQ = filterGetNotchQ(notchHz, notchCutoffHz);
+        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+            biquadFilterInit(&accelerationRuntime.notchFilter[axis], notchHz, hzToMicroseconds(acc.sampleRateHz), notchQ, FILTER_NOTCH, 1.0f);
         }
     }
 }

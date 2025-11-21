@@ -69,7 +69,7 @@ typedef struct rpmFilter_s {
 // Instance 1 = Accel
 FAST_DATA_ZERO_INIT static rpmFilter_t rpmFilter[2];
 
-void rpmFilterInit(const rpmFilterConfig_t *config, const timeUs_t looptimeUs, const int instance)
+void rpmFilterInit(const rpmFilterConfig_t *config, const timeUs_t looptimeUs, const rpmFilterType_e instance)
 {
     rpmFilter_t *self = &rpmFilter[instance];
 
@@ -112,7 +112,7 @@ void rpmFilterInit(const rpmFilterConfig_t *config, const timeUs_t looptimeUs, c
     self->notchUpdatesPerIteration = ceilf(numNotchesPerAxis / loopIterationsPerUpdate); // round to ceiling
 }
 
-FAST_CODE_NOINLINE void rpmFilterUpdate(const int instance)
+FAST_CODE_NOINLINE void rpmFilterUpdate(const rpmFilterType_e instance)
 {
     rpmFilter_t *self = &rpmFilter[instance];
 
@@ -172,7 +172,7 @@ FAST_CODE_NOINLINE void rpmFilterUpdate(const int instance)
     }
 }
 
-FAST_CODE float rpmFilterApply(const int axis, float value, const int instance)
+FAST_CODE float rpmFilterApply(const int axis, float value, const rpmFilterType_e instance)
 {
     rpmFilter_t *self = &rpmFilter[instance];
 
@@ -192,7 +192,7 @@ FAST_CODE float rpmFilterApply(const int axis, float value, const int instance)
     return value;
 }
 
-bool isRpmFilterEnabled(const int instance)
+bool isRpmFilterEnabled(const rpmFilterType_e instance)
 {
     rpmFilter_t *self = &rpmFilter[instance];
 

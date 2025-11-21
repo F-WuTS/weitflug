@@ -21,6 +21,7 @@
 #pragma once
 
 #include "common/time.h"
+#include "common/filter.h"
 #include "pg/pg.h"
 #include "drivers/accgyro/accgyro.h"
 #include "sensors/sensors.h"
@@ -74,6 +75,8 @@ typedef union rollAndPitchTrims_u {
 #if defined(USE_ACC)
 typedef struct accelerometerConfig_s {
     uint16_t acc_lpf_hz;                    // cutoff frequency for the low pass filter used on the acc z-axis for althold in Hz
+    uint16_t acc_soft_notch_hz;             // center frequency for the soft notch filter in Hz
+    uint16_t acc_soft_notch_cutoff;         // cutoff frequency for the soft notch filter in Hz
     uint8_t acc_hardware;                   // Which acc hardware to use on boards with more than one device
     bool acc_high_fsr;
     flightDynamicsTrims_t accZero;

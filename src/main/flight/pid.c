@@ -881,11 +881,11 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
     rotateItermAndAxisError();
 
 #ifdef USE_RPM_FILTER
-    rpmFilterUpdate(0);
+    rpmFilterUpdate(RPM_FILTER_GYRO);
 #endif
 
 #ifdef USE_ACC_RPM_FILTER
-    rpmFilterUpdate(1);
+    rpmFilterUpdate(RPM_FILTER_ACCEL);
 #endif
 
     // ----------PID controller----------

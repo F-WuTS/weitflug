@@ -26,7 +26,12 @@
 
 #include "pg/rpm_filter.h"
 
-void rpmFilterInit(const rpmFilterConfig_t *config, const timeUs_t looptimeUs, const int instance);
-void rpmFilterUpdate(const int instance);
-float rpmFilterApply(const int axis, float value, const int instance);
-bool isRpmFilterEnabled(const int instance);
+typedef enum {
+    RPM_FILTER_GYRO,
+    RPM_FILTER_ACCEL,
+} rpmFilterType_e;
+
+void rpmFilterInit(const rpmFilterConfig_t *config, const timeUs_t looptimeUs, const rpmFilterType_e instance);
+void rpmFilterUpdate(const rpmFilterType_e instance);
+float rpmFilterApply(const int axis, float value, const rpmFilterType_e instance);
+bool isRpmFilterEnabled(const rpmFilterType_e instance);
