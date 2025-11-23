@@ -31,6 +31,8 @@
 #define MSP2_SENSOR_CONFIG_ACTIVE           0x300A
 #define MSP2_PUSH_FAST                      0x300B    //  Specific data sent to the host without waiting for a request
 #define MSP2_PUSH_SLOW                      0x300C    //  Specific data sent to the host without waiting for a request
+#define MSP_GYRO_CALIBRATION                0x300D
+#define MSP_PUSH_CONFIG                     0x300E
 
 // MSP2_SET_TEXT and MSP2_GET_TEXT variable types
 #define MSP2TEXT_PILOT_NAME                      1

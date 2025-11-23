@@ -3298,6 +3298,14 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 #endif
 
         break;
+
+    case MSP_GYRO_CALIBRATION:
+        if (!ARMING_FLAG(ARMED)) {
+            gyroStartCalibration(false);
+        }
+
+        break;
+
     case MSP_EEPROM_WRITE:
         if (ARMING_FLAG(ARMED)) {
             return MSP_RESULT_ERROR;

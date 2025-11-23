@@ -15,6 +15,8 @@
 #include "flight/position.h"
 
 #include "fc/rc_controls.h"
+#include "fc/runtime_config.h"
+
 #include "rx/rx.h"
 
 #include "msp/msp.h"
@@ -27,6 +29,8 @@
 #else
 #define ACTIVE_GYRO (&gyro.gyroSensor1)
 #endif
+
+#define MSP_PUSH_DATA_SIZE 48
 
 /*
  * Instead of request/response, we use a push model for certain MSP commands.
@@ -74,6 +78,8 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     sbufWriteU16(&reply.buf, rcData[PITCH]);
     sbufWriteU16(&reply.buf, rcData[YAW]);
     sbufWriteU16(&reply.buf, rcData[THROTTLE]);
+
+    // sbufWriteU32(&reply.buf, getArmingDisableFlags());
 
     sbufWriteU16(&reply.buf, getDshotRpm(0));
     sbufWriteU16(&reply.buf, getDshotRpm(1));
