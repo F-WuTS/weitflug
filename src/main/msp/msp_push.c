@@ -30,7 +30,8 @@
 #define ACTIVE_GYRO (&gyro.gyroSensor1)
 #endif
 
-#define MSP_PUSH_DATA_SIZE 48
+#define MSP_PUSH_FRAME_SIZE 41
+#define MSP_PUSH_BATCH_SIZE 2
 
 /*
  * Instead of request/response, we use a push model for certain MSP commands.
@@ -40,16 +41,8 @@
  */
 void taskHandleMspPush(timeUs_t currentTimeUs)
 {
-    static uint8_t mspSerialOutBuf[MSP_PORT_OUTBUF_SIZE];
-
-    mspPacket_t reply = {
-        .buf = { .ptr = mspSerialOutBuf, .end = ARRAYEND(mspSerialOutBuf), },
-        .cmd = MSP2_PUSH_FAST,
-        .flags = 0,
-        .result = 0,
-        .direction = MSP_DIRECTION_REPLY,
-    };
-    uint8_t *outBufHead = reply.buf.ptr;
+    static uint8_t frameBuffer[MSP_PUSH_FRAME_SIZE * MSP_PUSH_BATCH_SIZE];
+    static uint8_t* framePtr = frameBuffer;
 
     // Calculate the attitude in 0.001 degree units. 180 deg = 18000
     int16_t roll = lrintf(atan2_approx(rMat[2][1], rMat[2][2]) * (18000.0f / M_PIf));
@@ -60,34 +53,93 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
         yaw += 36000;
     }
 
-    sbufWriteU32(&reply.buf, currentTimeUs);
+    // currentTimeUs (4 bytes)
+    framePtr[0] = (uint8_t)(currentTimeUs & 0xFF);
+    framePtr[1] = (uint8_t)((currentTimeUs >> 8) & 0xFF);
+    framePtr[2] = (uint8_t)((currentTimeUs >> 16) & 0xFF);
+    framePtr[3] = (uint8_t)((currentTimeUs >> 24) & 0xFF);
 
-    sbufWriteU16(&reply.buf, lrintf(acc.accADCf[0]));
-    sbufWriteU16(&reply.buf, lrintf(acc.accADCf[1]));
-    sbufWriteU16(&reply.buf, lrintf(acc.accADCf[2]));
+    // acc data (6 bytes)
+    int16_t accX = lrintf(acc.accADCf[0]);
+    framePtr[4] = (uint8_t)(accX & 0xFF);
+    framePtr[5] = (uint8_t)((accX >> 8) & 0xFF);
+    int16_t accY = lrintf(acc.accADCf[1]);
+    framePtr[6] = (uint8_t)(accY & 0xFF);
+    framePtr[7] = (uint8_t)((accY >> 8) & 0xFF);
+    int16_t accZ = lrintf(acc.accADCf[2]);
+    framePtr[8] = (uint8_t)(accZ & 0xFF);
+    framePtr[9] = (uint8_t)((accZ >> 8) & 0xFF);
 
-    sbufWriteU16(&reply.buf, gyroRateDps(0));
-    sbufWriteU16(&reply.buf, gyroRateDps(1));
-    sbufWriteU16(&reply.buf, gyroRateDps(2));
+    // gyro data (6 bytes)
+    int16_t gyroX = gyroRateDps(0);
+    framePtr[10] = (uint8_t)(gyroX & 0xFF);
+    framePtr[11] = (uint8_t)((gyroX >> 8) & 0xFF);
+    int16_t gyroY = gyroRateDps(1);
+    framePtr[12] = (uint8_t)(gyroY & 0xFF);
+    framePtr[13] = (uint8_t)((gyroY >> 8) & 0xFF);
+    int16_t gyroZ = gyroRateDps(2);
+    framePtr[14] = (uint8_t)(gyroZ & 0xFF);
+    framePtr[15] = (uint8_t)((gyroZ >> 8) & 0xFF);
 
-    sbufWriteU16(&reply.buf, roll);
-    sbufWriteU16(&reply.buf, pitch);
-    sbufWriteU16(&reply.buf, yaw);
+    // attitude data (6 bytes)
+    framePtr[16] = (uint8_t)(roll & 0xFF);
+    framePtr[17] = (uint8_t)((roll >> 8) & 0xFF);
+    framePtr[18] = (uint8_t)(pitch & 0xFF);
+    framePtr[19] = (uint8_t)((pitch >> 8) & 0xFF);
+    framePtr[20] = (uint8_t)(yaw & 0xFF);
+    framePtr[21] = (uint8_t)((yaw >> 8) & 0xFF);
 
-    sbufWriteU16(&reply.buf, rcData[ROLL]);
-    sbufWriteU16(&reply.buf, rcData[PITCH]);
-    sbufWriteU16(&reply.buf, rcData[YAW]);
-    sbufWriteU16(&reply.buf, rcData[THROTTLE]);
+    // RC data (8 bytes)
+    int16_t rcRoll = lrintf(rcData[ROLL]);
+    framePtr[22] = (uint8_t)(rcRoll & 0xFF);
+    framePtr[23] = (uint8_t)((rcRoll >> 8) & 0xFF);
+    int16_t rcPitch = lrintf(rcData[PITCH]);
+    framePtr[24] = (uint8_t)(rcPitch & 0xFF);
+    framePtr[25] = (uint8_t)((rcPitch >> 8) & 0xFF);
+    int16_t rcYaw = lrintf(rcData[YAW]);
+    framePtr[26] = (uint8_t)(rcYaw & 0xFF);
+    framePtr[27] = (uint8_t)((rcYaw >> 8) & 0xFF);
+    int16_t rcThrottle = lrintf(rcData[THROTTLE]);
+    framePtr[28] = (uint8_t)(rcThrottle & 0xFF);
+    framePtr[29] = (uint8_t)((rcThrottle >> 8) & 0xFF);
 
-    // sbufWriteU32(&reply.buf, getArmingDisableFlags());
+    // DShot RPM data (8 bytes)
+    uint16_t rpm0 = getDshotRpm(0);
+    framePtr[30] = (uint8_t)(rpm0 & 0xFF);
+    framePtr[31] = (uint8_t)((rpm0 >> 8) & 0xFF);
+    uint16_t rpm1 = getDshotRpm(1);
+    framePtr[32] = (uint8_t)(rpm1 & 0xFF);
+    framePtr[33] = (uint8_t)((rpm1 >> 8) & 0xFF);
+    uint16_t rpm2 = getDshotRpm(2);
+    framePtr[34] = (uint8_t)(rpm2 & 0xFF);
+    framePtr[35] = (uint8_t)((rpm2 >> 8) & 0xFF);
+    uint16_t rpm3 = getDshotRpm(3);
+    framePtr[36] = (uint8_t)(rpm3 & 0xFF);
+    framePtr[37] = (uint8_t)((rpm3 >> 8) & 0xFF);
 
-    sbufWriteU16(&reply.buf, getDshotRpm(0));
-    sbufWriteU16(&reply.buf, getDshotRpm(1));
-    sbufWriteU16(&reply.buf, getDshotRpm(2));
-    sbufWriteU16(&reply.buf, getDshotRpm(3));
+    // Battery voltage (2 bytes)
+    uint16_t voltage = getBatteryVoltage();
+    framePtr[38] = (uint8_t)(voltage & 0xFF);
+    framePtr[39] = (uint8_t)((voltage >> 8) & 0xFF);
 
-    sbufWriteU16(&reply.buf, getBatteryVoltage());
+    uint8_t is_frame_end = framePtr == (frameBuffer + ((MSP_PUSH_BATCH_SIZE - 1) * MSP_PUSH_FRAME_SIZE)) ? 1 : 0;
+    framePtr[40] = (uint8_t)(is_frame_end & 0xFF);
 
-    sbufSwitchToReader(&reply.buf, outBufHead);
-    mspSerialPush2(SERIAL_PORT_USART3, &reply, MSP_V2_NATIVE);
+    framePtr += MSP_PUSH_FRAME_SIZE;
+
+    if (framePtr >= frameBuffer + (MSP_PUSH_FRAME_SIZE * MSP_PUSH_BATCH_SIZE)) {
+        // When we've filled the batch, send it
+
+        for (size_t i = 0; i < MSP_PUSH_BATCH_SIZE; i++) {
+            mspSerialPush(
+                SERIAL_PORT_USART3,
+                MSP2_PUSH,
+                &frameBuffer[i * MSP_PUSH_FRAME_SIZE],
+                MSP_PUSH_FRAME_SIZE,
+                MSP_DIRECTION_REPLY,
+                MSP_V2_NATIVE
+            );
+        }
+        framePtr = frameBuffer;
+    }
 }

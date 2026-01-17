@@ -401,7 +401,7 @@ void accInitFilters(void)
 
         const float notchQ = filterGetNotchQ(notchHz, notchCutoffHz);
         for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-            biquadFilterInit(&accelerationRuntime.notchFilter[axis], notchHz, hzToMicroseconds(acc.sampleRateHz), notchQ, FILTER_NOTCH, 1.0f);
+            biquadFilterInit(&accelerationRuntime.notchFilter[axis], notchHz, hzToMicroseconds(acc.sampleRateHz), notchQ, FILTER_NOTCH, 0.8f);
         }
     }
 }
