@@ -30,7 +30,7 @@
 #define ACTIVE_GYRO (&gyro.gyroSensor1)
 #endif
 
-#define MSP_PUSH_FRAME_SIZE 43
+#define MSP_PUSH_FRAME_SIZE 45
 #define MSP_PUSH_BATCH_SIZE 2
 
 /*
@@ -108,27 +108,32 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     framePtr[30] = (uint8_t)(rcAux3 & 0xFF);
     framePtr[31] = (uint8_t)((rcAux3 >> 8) & 0xFF);
 
+    // RC Aux4 data (2 bytes)
+    int16_t rcAux4 = lrintf(rcData[AUX4]);
+    framePtr[32] = (uint8_t)(rcAux4 & 0xFF);
+    framePtr[33] = (uint8_t)((rcAux4 >> 8) & 0xFF);
+
     // DShot RPM data (8 bytes)
     uint16_t rpm0 = getDshotRpm(0);
-    framePtr[32] = (uint8_t)(rpm0 & 0xFF);
-    framePtr[33] = (uint8_t)((rpm0 >> 8) & 0xFF);
+    framePtr[34] = (uint8_t)(rpm0 & 0xFF);
+    framePtr[35] = (uint8_t)((rpm0 >> 8) & 0xFF);
     uint16_t rpm1 = getDshotRpm(1);
-    framePtr[34] = (uint8_t)(rpm1 & 0xFF);
-    framePtr[35] = (uint8_t)((rpm1 >> 8) & 0xFF);
+    framePtr[36] = (uint8_t)(rpm1 & 0xFF);
+    framePtr[37] = (uint8_t)((rpm1 >> 8) & 0xFF);
     uint16_t rpm2 = getDshotRpm(2);
-    framePtr[36] = (uint8_t)(rpm2 & 0xFF);
-    framePtr[37] = (uint8_t)((rpm2 >> 8) & 0xFF);
+    framePtr[38] = (uint8_t)(rpm2 & 0xFF);
+    framePtr[39] = (uint8_t)((rpm2 >> 8) & 0xFF);
     uint16_t rpm3 = getDshotRpm(3);
-    framePtr[38] = (uint8_t)(rpm3 & 0xFF);
-    framePtr[39] = (uint8_t)((rpm3 >> 8) & 0xFF);
+    framePtr[40] = (uint8_t)(rpm3 & 0xFF);
+    framePtr[41] = (uint8_t)((rpm3 >> 8) & 0xFF);
 
     // Battery voltage (2 bytes)
     uint16_t voltage = getBatteryVoltage();
-    framePtr[40] = (uint8_t)(voltage & 0xFF);
-    framePtr[41] = (uint8_t)((voltage >> 8) & 0xFF);
+    framePtr[42] = (uint8_t)(voltage & 0xFF);
+    framePtr[43] = (uint8_t)((voltage >> 8) & 0xFF);
 
     uint8_t is_frame_end = framePtr == (frameBuffer + ((MSP_PUSH_BATCH_SIZE - 1) * MSP_PUSH_FRAME_SIZE)) ? 1 : 0;
-    framePtr[42] = (uint8_t)(is_frame_end & 0xFF);
+    framePtr[44] = (uint8_t)(is_frame_end & 0xFF);
 
     framePtr += MSP_PUSH_FRAME_SIZE;
 
