@@ -45,9 +45,9 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     static uint8_t* framePtr = frameBuffer;
 
     // Calculate the attitude in 0.001 degree units. 180 deg = 18000
-    int16_t roll = lrintf(atan2_approx(rMat[2][1], rMat[2][2]) * (18000.0f / M_PIf));
-    int16_t pitch = lrintf(((0.5f * M_PIf) - acos_approx(-rMat[2][0])) * (18000.0f / M_PIf));
-    int16_t yaw = lrintf((-atan2_approx(rMat[1][0], rMat[0][0]) * (18000.0f / M_PIf)));
+    int16_t roll = lrintf(atan2_approx(rMat.m[2][1], rMat.m[2][2]) * (18000.0f / M_PIf));
+    int16_t pitch = lrintf(((0.5f * M_PIf) - acos_approx(-rMat.m[2][0])) * (18000.0f / M_PIf));
+    int16_t yaw = lrintf((-atan2_approx(rMat.m[1][0], rMat.m[0][0]) * (18000.0f / M_PIf)));
 
     if (yaw < 0) {
         yaw += 36000;
@@ -60,13 +60,13 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
     framePtr[3] = (uint8_t)((currentTimeUs >> 24) & 0xFF);
 
     // acc data (6 bytes)
-    int16_t accX = lrintf(acc.accADCf[0]);
+    int16_t accX = lrintf(acc.accADCf.x);
     framePtr[4] = (uint8_t)(accX & 0xFF);
     framePtr[5] = (uint8_t)((accX >> 8) & 0xFF);
-    int16_t accY = lrintf(acc.accADCf[1]);
+    int16_t accY = lrintf(acc.accADCf.y);
     framePtr[6] = (uint8_t)(accY & 0xFF);
     framePtr[7] = (uint8_t)((accY >> 8) & 0xFF);
-    int16_t accZ = lrintf(acc.accADCf[2]);
+    int16_t accZ = lrintf(acc.accADCf.z);
     framePtr[8] = (uint8_t)(accZ & 0xFF);
     framePtr[9] = (uint8_t)((accZ >> 8) & 0xFF);
 

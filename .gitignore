@@ -59,4 +59,6 @@ ubuntu*.log
 eeprom.bin
 
 # config used for building targets
-/src/config
+# changed to submodule
+#/src/config
+

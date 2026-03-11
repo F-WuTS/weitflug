@@ -18,7 +18,6 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #include <math.h>
 
 #include "platform.h"
@@ -44,7 +43,6 @@
 #include "rpm_filter.h"
 
 #define RPM_FILTER_DURATION_S    0.001f  // Maximum duration allowed to update all RPM notches once
-
 
 typedef struct rpmFilter_s {
 
@@ -128,6 +126,9 @@ FAST_CODE_NOINLINE void rpmFilterUpdate(const rpmFilterType_e instance)
         return;
     }
 
+    const float dtCompensation = schedulerGetCycleTimeMultiplier();
+    const float correctedLooptime = self->looptimeUs * dtCompensation;
+
     // update RPM notches
     for (int i = 0; i < self->notchUpdatesPerIteration; i++) {
 
@@ -150,7 +151,7 @@ FAST_CODE_NOINLINE void rpmFilterUpdate(const rpmFilterType_e instance)
             weight *= self->weights[self->harmonicIndex];
 
             // update notch
-            biquadFilterUpdate(template, frequencyHz, self->looptimeUs, self->q, FILTER_NOTCH, weight);
+            biquadFilterUpdate(template, frequencyHz, correctedLooptime, self->q, FILTER_NOTCH, weight);
 
             // copy notch properties to corresponding notches on PITCH and YAW
             for (int axis = 1; axis < XYZ_AXIS_COUNT; axis++) {
