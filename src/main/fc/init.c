@@ -136,6 +136,8 @@
 #include "msp/msp.h"
 #include "msp/msp_serial.h"
 
+#include "fsp/fsp.h"
+
 #include "osd/osd.h"
 
 #include "pg/adc.h"
@@ -859,6 +861,10 @@ void initPhase3(void)
     // Initialize MSP
     mspInit();
     mspSerialInit();
+
+#ifdef USE_FSP
+    fspInit();
+#endif
 
 /*
  * CMS, display devices and OSD

@@ -690,10 +690,15 @@ extern struct linker_symbol __config_end;
 
 // MSP Push
 #ifndef USE_MSP_PUSH
-#define USE_MSP_PUSH
+// #define USE_MSP_PUSH
 #endif
 
 // Accelerometer RPM Filter
 #ifndef USE_ACC_RPM_FILTER
 #define USE_ACC_RPM_FILTER
+#endif
+
+// FSP protocol
+#ifndef USE_FSP
+#define USE_FSP
 #endif

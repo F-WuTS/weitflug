@@ -194,6 +194,9 @@ typedef enum {
 #ifdef USE_MSP_PUSH
     TASK_MSP_PUSH,
 #endif
+#ifdef USE_FSP
+    TASK_FSP,
+#endif
 
     /* Count of real tasks */
     TASK_COUNT,
