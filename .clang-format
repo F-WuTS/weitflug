@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://json.schemastore.org/clang-format-21.x.json
+BasedOnStyle: LLVM
+Language: C
+
+# K&R-ish braces
+BreakBeforeBraces: Stroustrup
+
+# Indentation
+UseTab: Never
+IndentWidth: 4
+ContinuationIndentWidth: 4
+
+# Spacing similar to --pad-header and --pad-oper
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpaceAroundPointerQualifiers: Default
+
+# Pointer/reference alignment similar to --align-pointer=name --align-reference=name
+PointerAlignment: Right
+ReferenceAlignment: Right
+
+# Line length
+ColumnLimit: 120
+
+# Keep long statements reasonably aligned
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: BinPack
