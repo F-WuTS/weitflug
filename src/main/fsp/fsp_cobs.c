@@ -36,6 +36,12 @@ fspCobsDecoderResult_e fspCobsDecoderPush(fspCobsDecoder_t *decoder, uint8_t byt
         decoder->blockCode = decoder->blockRemaining = byte;
     }
     else {
+        if (byte == 0) {
+            // Zero bytes are not allowed in the middle of a block
+            fspDecoderReset(decoder);
+            return FSP_COBS_DECODER_ERROR_INVALID_INPUT;
+        }
+
         // Decode a data byte
         if (decoder->bufferIndex >= decoder->bufferSize) {
             fspDecoderReset(decoder);
