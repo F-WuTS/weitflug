@@ -20,6 +20,7 @@
 #include "sensors/gyro_init.h"
 
 #define FSP_MAX_PACKET_SIZE 255
+#define FSP_MAVLINK_BUFFER_SIZE 512
 
 typedef struct {
     struct serialPort_s *port;
@@ -30,6 +31,9 @@ typedef struct {
     uint8_t outBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4))); // +2 for COBS overhead
     fspFcTxPacket_t txPacket;
     size_t batchIndex;
+    uint8_t mavlinkPacketBuffer[MAVLINK_MAX_PACKET_LEN];
+    uint8_t mavlinkBuffer[FSP_MAVLINK_BUFFER_SIZE];
+    size_t mavlinkBufferHead, mavlinkBufferTail;
 } fspState_t;
 
 static fspState_t fspState;
@@ -63,7 +67,7 @@ void fspInit(void)
     }
 }
 
-static void fspFillFrame(fspFcSensorFrame_t *frame, timeUs_t currentTimeUs)
+static void fspFillFrame(fspSensorFrame_t *frame, timeUs_t currentTimeUs)
 {
     frame->header.timestamp = currentTimeUs;
     frame->acc.x = lrintf(acc.accADCf.x);
@@ -91,6 +95,64 @@ static void fspFillFrame(fspFcSensorFrame_t *frame, timeUs_t currentTimeUs)
     frame->batteryVoltage = getBatteryVoltage();
 }
 
+static bool fspMavlinkBufferWrite(const uint8_t *data, size_t len)
+{
+    if (fspState.mavlinkBufferHead < fspState.mavlinkBufferTail) {
+        size_t available = fspState.mavlinkBufferTail - fspState.mavlinkBufferHead;
+        if (len > available) {
+            return false;
+        }
+        memcpy(fspState.mavlinkBuffer + fspState.mavlinkBufferHead, data, len);
+        fspState.mavlinkBufferHead += len;
+    }
+    else {
+        size_t available = sizeof(fspState.mavlinkBuffer) - (fspState.mavlinkBufferHead - fspState.mavlinkBufferTail);
+        if (len > available) {
+            return false;
+        }
+        size_t headToEnd = sizeof(fspState.mavlinkBuffer) - fspState.mavlinkBufferHead;
+        if (len <= headToEnd) {
+            memcpy(fspState.mavlinkBuffer + fspState.mavlinkBufferHead, data, len);
+            fspState.mavlinkBufferHead += len;
+        }
+        else {
+            memcpy(fspState.mavlinkBuffer + fspState.mavlinkBufferHead, data, headToEnd);
+            memcpy(fspState.mavlinkBuffer, data + headToEnd, len - headToEnd);
+            fspState.mavlinkBufferHead = len - headToEnd;
+        }
+    }
+    return true;
+}
+
+static size_t fspMavlinkBufferRead(uint8_t *data, size_t len)
+{
+    if (fspState.mavlinkBufferTail <= fspState.mavlinkBufferHead) {
+        size_t available = fspState.mavlinkBufferHead - fspState.mavlinkBufferTail;
+        if (len > available) {
+            len = available;
+        }
+        memcpy(data, fspState.mavlinkBuffer + fspState.mavlinkBufferTail, len);
+        fspState.mavlinkBufferTail += len;
+    }
+    else {
+        size_t available = sizeof(fspState.mavlinkBuffer) - (fspState.mavlinkBufferTail - fspState.mavlinkBufferHead);
+        if (len > available) {
+            len = available;
+        }
+        size_t tailToEnd = sizeof(fspState.mavlinkBuffer) - fspState.mavlinkBufferTail;
+        if (len <= tailToEnd) {
+            memcpy(data, fspState.mavlinkBuffer + fspState.mavlinkBufferTail, len);
+            fspState.mavlinkBufferTail += len;
+        }
+        else {
+            memcpy(data, fspState.mavlinkBuffer + fspState.mavlinkBufferTail, tailToEnd);
+            memcpy(data + tailToEnd, fspState.mavlinkBuffer, len - tailToEnd);
+            fspState.mavlinkBufferTail = len - tailToEnd;
+        }
+    }
+    return len;
+}
+
 void fspUpdate(timeUs_t currentTimeUs)
 {
     if (!fspState.port) {
@@ -98,6 +160,11 @@ void fspUpdate(timeUs_t currentTimeUs)
     }
 
     fspFillFrame(&fspState.txPacket.sensorFrames[fspState.batchIndex++], currentTimeUs);
+
+    // Tunnel recorded MAVLink messages from buffer
+    size_t mavlinkLen = fspMavlinkBufferRead(fspState.txPacket.mavlink.data, sizeof(fspState.txPacket.mavlink.data));
+    memset(fspState.txPacket.mavlink.data + mavlinkLen, 0, sizeof(fspState.txPacket.mavlink.data) - mavlinkLen);
+
     if (fspState.batchIndex >= FSP_SENSOR_FRAME_BATCH_COUNT) {
         size_t encodedLength;
         if (fspCobsEncode((uint8_t *)&fspState.txPacket, sizeof(fspState.txPacket), fspState.outBuf,
@@ -129,4 +196,11 @@ void fspUpdate(timeUs_t currentTimeUs)
             break;
         }
     }
+}
+
+void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_t *status)
+{
+    (void)status;
+    uint16_t length = mavlink_msg_to_send_buffer(fspState.mavlinkPacketBuffer, msg);
+    fspMavlinkBufferWrite(fspState.mavlinkPacketBuffer, length);
 }

@@ -142,7 +142,7 @@ void taskHandleMspPush(timeUs_t currentTimeUs)
 
         for (size_t i = 0; i < MSP_PUSH_BATCH_SIZE; i++) {
             mspSerialPush(
-                SERIAL_PORT_USART3,
+                SERIAL_PORT_USART1,
                 MSP2_PUSH,
                 &frameBuffer[i * MSP_PUSH_FRAME_SIZE],
                 MSP_PUSH_FRAME_SIZE,

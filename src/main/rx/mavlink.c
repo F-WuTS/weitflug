@@ -48,6 +48,10 @@
 #include "common/mavlink.h"
 #pragma GCC diagnostic pop
 
+#ifdef USE_FSP
+#include "fsp/fsp.h"
+#endif
+
 #define MAVLINK_CHANNEL_COUNT 18
 #define MAVLINK_BAUD_RATE_INDEX BAUD_460800
 static uint16_t mavlinkChannelData[MAVLINK_CHANNEL_COUNT];
@@ -142,6 +146,11 @@ STATIC_UNIT_TESTED void mavlinkDataReceive(uint16_t c, void *data)
         case MAVLINK_MSG_ID_RADIO_STATUS:
             handleIncoming_RADIO_STATUS();
             break;
+        #ifdef USE_FSP
+        default:
+            fspHandleMavlinkMessage(&mavRecvMsg, &mavRecvStatus);
+            break;
+        #endif
         }
     }
 }
@@ -213,4 +222,3 @@ bool shouldSendMavlinkTelemetry(void) {
 #endif
 
 #endif
-
