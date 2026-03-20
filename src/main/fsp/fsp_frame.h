@@ -35,6 +35,7 @@ typedef struct {
 typedef struct {
     fspPacketHeader_t header;
     fspVec_t acc;
+    int16_t acc1G;
     fspVec_t gyro;
     fspAtt_t attitude;
     fspRcData_t rc;
@@ -52,6 +53,8 @@ typedef struct {
 } fspFcRxPacket_t;
 
 typedef struct {
+    uint8_t version;
+    uint32_t reserved : 24;
     fspSensorFrame_t sensorFrames[FSP_SENSOR_FRAME_BATCH_COUNT];
     fspMavlinkTunnel_t mavlink;
 } fspFcTxPacket_t;

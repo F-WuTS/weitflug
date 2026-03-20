@@ -73,6 +73,7 @@ static void fspFillFrame(fspSensorFrame_t *frame, timeUs_t currentTimeUs)
     frame->acc.x = lrintf(acc.accADCf.x);
     frame->acc.y = lrintf(acc.accADCf.y);
     frame->acc.z = lrintf(acc.accADCf.z);
+    frame->acc1G = acc.dev.acc_1G;
     frame->gyro.x = gyroRateDps(0);
     frame->gyro.y = gyroRateDps(1);
     frame->gyro.z = gyroRateDps(2);
@@ -159,6 +160,7 @@ void fspUpdate(timeUs_t currentTimeUs)
         return;
     }
 
+    fspState.txPacket.version = FSP_VERSION;
     fspFillFrame(&fspState.txPacket.sensorFrames[fspState.batchIndex++], currentTimeUs);
 
     // Tunnel recorded MAVLink messages from buffer
