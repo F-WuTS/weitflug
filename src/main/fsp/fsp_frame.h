@@ -6,7 +6,7 @@ extern "C" {
 
 #include <stdint.h>
 
-#define FSP_VERSION 0x01
+#define FSP_VERSION 0x02
 #define FSP_SENSOR_FRAME_BATCH_COUNT 2
 #define FSP_MAVLINK_TUNNEL_SIZE 64
 
@@ -36,6 +36,7 @@ typedef struct {
     fspPacketHeader_t header;
     fspVec_t acc;
     int16_t acc1G;
+    float gyroDpsLsb;
     fspVec_t gyro;
     fspAtt_t attitude;
     fspRcData_t rc;
