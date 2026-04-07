@@ -6,6 +6,7 @@
 #include "fsp/fsp_cobs.h"
 #include "fsp/fsp_frame.h"
 
+#include "common/crc.h"
 #include "common/maths.h"
 #include "common/utils.h"
 #include "drivers/dshot.h"
@@ -47,7 +48,7 @@ void fspInit(void)
 
     const serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_FSP);
     if (portConfig) {
-        portOptions_e options = SERIAL_NOT_INVERTED;
+        portOptions_e options = SERIAL_NOT_INVERTED | SERIAL_STOPBITS_1 | SERIAL_PARITY_NO;
         if (serialType(portConfig->identifier) == SERIALTYPE_UART ||
             serialType(portConfig->identifier) == SERIALTYPE_LPUART ||
             serialType(portConfig->identifier) == SERIALTYPE_PIOUART) {
@@ -170,6 +171,8 @@ void fspUpdate(timeUs_t currentTimeUs)
 
     if (fspState.batchIndex >= FSP_SENSOR_FRAME_BATCH_COUNT) {
         size_t encodedLength;
+        fspState.txPacket.crc = crc8_update(0xFF, &fspState.txPacket,
+                                            sizeof(fspState.txPacket) - sizeof(fspState.txPacket.crc), FSP_CRC_POLY);
         if (fspCobsEncode((uint8_t *)&fspState.txPacket, sizeof(fspState.txPacket), fspState.outBuf,
                           sizeof(fspState.outBuf), &encodedLength)) {
             serialWriteBuf(fspState.port, fspState.outBuf, encodedLength);
@@ -184,6 +187,11 @@ void fspUpdate(timeUs_t currentTimeUs)
         case FSP_COBS_DECODER_DONE:
             if (decodedLength == sizeof(fspFcRxPacket_t)) {
                 fspFcRxPacket_t *rxPacket = (fspFcRxPacket_t *)fspState.inBuf;
+                uint8_t crc = crc8_update(0xFF, rxPacket, sizeof(*rxPacket) - sizeof(rxPacket->crc), FSP_CRC_POLY);
+                if (crc != rxPacket->crc) {
+                    break;
+                }
+
                 uint16_t frame[] = {
                     [ROLL] = rxPacket->rc.roll,         [PITCH] = rxPacket->rc.pitch, [YAW] = rxPacket->rc.yaw,
                     [THROTTLE] = rxPacket->rc.throttle, [AUX3] = rxPacket->rc.aux3,   [AUX4] = rxPacket->rc.aux4,
