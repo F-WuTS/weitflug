@@ -10,7 +10,7 @@ extern "C" {
 
 #define FSP_VERSION 0x03
 #define FSP_SENSOR_FRAME_BATCH_COUNT 2
-#define FSP_MAVLINK_TUNNEL_SIZE 64
+#define FSP_MAVLINK_TUNNEL_SIZE 2
 #define FSP_CRC_POLY 0xD5
 
 typedef struct {

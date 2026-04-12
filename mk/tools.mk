@@ -21,7 +21,7 @@
 # Set up ARM (STM32) SDK
 # Checked below, Should match the output of $(shell arm-none-eabi-gcc -dumpversion)
 # must match arm-none-eabi-gcc-<version> file in arm sdk distribution
-GCC_REQUIRED_VERSION ?= 13.3.1
+GCC_REQUIRED_VERSION ?= 14.3.1
 
 ## arm_sdk_install   : Install Arm SDK
 .PHONY: arm_sdk_install

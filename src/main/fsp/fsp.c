@@ -193,8 +193,12 @@ void fspUpdate(timeUs_t currentTimeUs)
                 }
 
                 uint16_t frame[] = {
-                    [ROLL] = rxPacket->rc.roll,         [PITCH] = rxPacket->rc.pitch, [YAW] = rxPacket->rc.yaw,
-                    [THROTTLE] = rxPacket->rc.throttle, [AUX3] = rxPacket->rc.aux3,   [AUX4] = rxPacket->rc.aux4,
+                    [0] = rxPacket->rc.roll,
+                    [1] = rxPacket->rc.pitch,
+                    [2] = rxPacket->rc.throttle,
+                    [3] = rxPacket->rc.yaw,
+                    [6] = rxPacket->rc.aux3,
+                    [7] = rxPacket->rc.aux4,
                 };
                 rxMspFrameReceive(frame, ARRAYLEN(frame));
             }
