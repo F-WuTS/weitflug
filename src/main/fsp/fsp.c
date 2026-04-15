@@ -93,7 +93,7 @@ static void fspFillFrame(fspSensorFrame_t *frame, timeUs_t currentTimeUs)
     frame->rc.aux3 = lrintf(rcData[AUX3]);
     frame->rc.aux4 = lrintf(rcData[AUX4]);
     for (int i = 0; i < 4; i++) {
-        frame->rpm[i] = getDshotRpm(0);
+        frame->rpm[i] = getDshotRpm(i);
     }
     frame->batteryVoltage = getBatteryVoltage();
 }
