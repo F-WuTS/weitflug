@@ -10,7 +10,9 @@ extern "C" {
 
 #define FSP_VERSION 0x03
 #define FSP_SENSOR_FRAME_BATCH_COUNT 2
-#define FSP_MAVLINK_TUNNEL_SIZE 2
+#ifndef FSP_MAVLINK_TUNNEL_SIZE
+#define FSP_MAVLINK_TUNNEL_SIZE 64
+#endif
 #define FSP_CRC_POLY 0xD5
 
 typedef struct {
@@ -54,6 +56,7 @@ typedef struct {
 typedef struct {
     fspPacketHeader_t header;
     fspRcData_t rc;
+    uint32_t reserved : 24;
     uint8_t crc;
 } fspFcRxPacket_t;
 
@@ -68,6 +71,7 @@ typedef struct {
 
 static_assert((offsetof(fspFcTxPacket_t, version) == 0), "version must be at offset 0");
 static_assert((offsetof(fspFcTxPacket_t, crc) == sizeof(fspFcTxPacket_t) - 1), "crc must be at the end of the packet");
+static_assert((offsetof(fspFcRxPacket_t, crc) == sizeof(fspFcRxPacket_t) - 1), "crc must be at the end of the packet");
 
 #ifdef __cplusplus
 }
