@@ -483,7 +483,7 @@ task_attribute_t task_attributes[TASK_COUNT] = {
 #endif
 
 #ifdef USE_FSP
-    [TASK_FSP] = DEFINE_TASK("FSP", NULL, NULL, fspUpdate, TASK_PERIOD_HZ(500), TASK_PRIORITY_LOW),
+    [TASK_FSP] = DEFINE_TASK("FSP", NULL, NULL, fspUpdate, TASK_PERIOD_HZ(FSP_PERIOD_HZ), TASK_PRIORITY_LOW),
 #endif
 
 #ifdef USE_GIMBAL

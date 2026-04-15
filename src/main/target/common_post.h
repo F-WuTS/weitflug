@@ -702,3 +702,7 @@ extern struct linker_symbol __config_end;
 #ifndef USE_FSP
 #define USE_FSP
 #endif
+
+#ifndef FSP_PERIOD_HZ
+#define FSP_PERIOD_HZ 1000
+#endif
