@@ -8,6 +8,7 @@
 
 #include "common/crc.h"
 #include "common/maths.h"
+#include "common/time.h"
 #include "common/utils.h"
 #include "drivers/dshot.h"
 #include "drivers/serial.h"
@@ -22,6 +23,7 @@
 
 #define FSP_MAX_PACKET_SIZE 255
 #define FSP_MAVLINK_BUFFER_SIZE 512
+#define FSP_SENSOR_FRAME_QUEUE_SIZE FSP_SENSOR_FRAME_BATCH_COUNT + 2
 
 typedef struct {
     struct serialPort_s *port;
@@ -30,8 +32,10 @@ typedef struct {
     // Buffers are aligned to 4 bytes to allow reinterpreting as fspFcRxPacket_t/fspFcTxPacket_t without copying
     uint8_t inBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4)));  // +2 for COBS overhead
     uint8_t outBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4))); // +2 for COBS overhead
-    fspFcTxPacket_t txPacket;
-    size_t batchIndex;
+    timeUs_t nextCaptureTimeUs;
+    bool nextCaptureTimeValid;
+    fspSensorFrame_t sensorFrameQueue[FSP_SENSOR_FRAME_QUEUE_SIZE];
+    size_t sensorFrameQueueHead, sensorFrameQueueTail;
     uint8_t mavlinkPacketBuffer[MAVLINK_MAX_PACKET_LEN];
     uint8_t mavlinkBuffer[FSP_MAVLINK_BUFFER_SIZE];
     size_t mavlinkBufferHead, mavlinkBufferTail;
@@ -66,36 +70,6 @@ void fspInit(void)
             fspCobsDecoderInit(&fspState.cobsDecoder, fspState.inBuf, sizeof(fspState.inBuf));
         }
     }
-}
-
-static void fspFillFrame(fspSensorFrame_t *frame, timeUs_t currentTimeUs)
-{
-    frame->header.timestamp = currentTimeUs;
-    frame->acc.x = lrintf(acc.accADCf.x);
-    frame->acc.y = lrintf(acc.accADCf.y);
-    frame->acc.z = lrintf(acc.accADCf.z);
-    frame->acc1G = acc.dev.acc_1G;
-    frame->gyro.x = gyroRateDps(0);
-    frame->gyro.y = gyroRateDps(1);
-    frame->gyro.z = gyroRateDps(2);
-    frame->gyroDpsLsb = gyro.scale;
-    frame->attitude.roll = lrintf(atan2_approx(rMat.m[2][1], rMat.m[2][2]) * (18000.0f / M_PIf));
-    frame->attitude.pitch = lrintf(((0.5f * M_PIf) - acos_approx(-rMat.m[2][0])) * (18000.0f / M_PIf));
-    long yaw = lrintf((-atan2_approx(rMat.m[1][0], rMat.m[0][0]) * (18000.0f / M_PIf)));
-    if (yaw < 0) {
-        yaw += 36000;
-    }
-    frame->attitude.yaw = yaw;
-    frame->rc.roll = lrintf(rcData[ROLL]);
-    frame->rc.pitch = lrintf(rcData[PITCH]);
-    frame->rc.yaw = lrintf(rcData[YAW]);
-    frame->rc.throttle = lrintf(rcData[THROTTLE]);
-    frame->rc.aux3 = lrintf(rcData[AUX3]);
-    frame->rc.aux4 = lrintf(rcData[AUX4]);
-    for (int i = 0; i < 4; i++) {
-        frame->rpm[i] = getDshotRpm(i);
-    }
-    frame->batteryVoltage = getBatteryVoltage();
 }
 
 static bool fspMavlinkBufferWrite(const uint8_t *data, size_t len)
@@ -162,22 +136,38 @@ void fspUpdate(timeUs_t currentTimeUs)
         return;
     }
 
-    fspState.txPacket.version = FSP_VERSION;
-    fspFillFrame(&fspState.txPacket.sensorFrames[fspState.batchIndex++], currentTimeUs);
+    // Check if FSP_SENSOR_FRAME_BATCH_COUNT frames are available in the queue
+    size_t framesAvailable =
+        (fspState.sensorFrameQueueHead + FSP_SENSOR_FRAME_QUEUE_SIZE - fspState.sensorFrameQueueTail) %
+        FSP_SENSOR_FRAME_QUEUE_SIZE;
+    if (framesAvailable < FSP_SENSOR_FRAME_BATCH_COUNT) {
+        return;
+    }
+
+    fspFcTxPacket_t txPacket = {
+        .header =
+            {
+                .version = FSP_VERSION,
+                .timestamp = currentTimeUs,
+            },
+    };
+
+    // Copy sensor frames from queue to packet
+    for (size_t i = 0; i < FSP_SENSOR_FRAME_BATCH_COUNT; i++) {
+        txPacket.sensorFrames[i] = fspState.sensorFrameQueue[fspState.sensorFrameQueueTail];
+    }
+    fspState.sensorFrameQueueTail =
+        (fspState.sensorFrameQueueTail + FSP_SENSOR_FRAME_BATCH_COUNT) % FSP_SENSOR_FRAME_QUEUE_SIZE;
 
     // Tunnel recorded MAVLink messages from buffer
-    size_t mavlinkLen = fspMavlinkBufferRead(fspState.txPacket.mavlink.data, sizeof(fspState.txPacket.mavlink.data));
-    memset(fspState.txPacket.mavlink.data + mavlinkLen, 0, sizeof(fspState.txPacket.mavlink.data) - mavlinkLen);
+    size_t mavlinkLen = fspMavlinkBufferRead(txPacket.mavlink.data, sizeof(txPacket.mavlink.data));
+    memset(txPacket.mavlink.data + mavlinkLen, 0, sizeof(txPacket.mavlink.data) - mavlinkLen);
 
-    if (fspState.batchIndex >= FSP_SENSOR_FRAME_BATCH_COUNT) {
-        size_t encodedLength;
-        fspState.txPacket.crc = crc8_update(0xFF, &fspState.txPacket,
-                                            sizeof(fspState.txPacket) - sizeof(fspState.txPacket.crc), FSP_CRC_POLY);
-        if (fspCobsEncode((uint8_t *)&fspState.txPacket, sizeof(fspState.txPacket), fspState.outBuf,
-                          sizeof(fspState.outBuf), &encodedLength)) {
-            serialWriteBuf(fspState.port, fspState.outBuf, encodedLength);
-        }
-        fspState.batchIndex = 0;
+    size_t encodedLength;
+    txPacket.crc = crc8_update(0xFF, &txPacket, sizeof(txPacket) - 1, FSP_CRC_POLY);
+    if (fspCobsEncode((uint8_t *)&txPacket, sizeof(txPacket), fspState.outBuf, sizeof(fspState.outBuf),
+                      &encodedLength)) {
+        serialWriteBuf(fspState.port, fspState.outBuf, encodedLength);
     }
 
     while (serialRxBytesWaiting(fspState.port)) {
@@ -187,18 +177,17 @@ void fspUpdate(timeUs_t currentTimeUs)
         case FSP_COBS_DECODER_DONE:
             if (decodedLength == sizeof(fspFcRxPacket_t)) {
                 fspFcRxPacket_t *rxPacket = (fspFcRxPacket_t *)fspState.inBuf;
-                uint8_t crc = crc8_update(0xFF, rxPacket, sizeof(*rxPacket) - sizeof(rxPacket->crc), FSP_CRC_POLY);
+                uint8_t crc = crc8_update(0xFF, rxPacket, sizeof(*rxPacket) - 1, FSP_CRC_POLY);
                 if (crc != rxPacket->crc) {
+                    break;
+                }
+                if (rxPacket->header.version != FSP_VERSION) {
                     break;
                 }
 
                 uint16_t frame[] = {
-                    [0] = rxPacket->rc.roll,
-                    [1] = rxPacket->rc.pitch,
-                    [2] = rxPacket->rc.throttle,
-                    [3] = rxPacket->rc.yaw,
-                    [6] = rxPacket->rc.aux3,
-                    [7] = rxPacket->rc.aux4,
+                    [0] = rxPacket->rc.roll, [1] = rxPacket->rc.pitch, [2] = rxPacket->rc.throttle,
+                    [3] = rxPacket->rc.yaw,  [6] = rxPacket->rc.aux3,  [7] = rxPacket->rc.aux4,
                 };
                 rxMspFrameReceive(frame, ARRAYLEN(frame));
             }
@@ -211,6 +200,58 @@ void fspUpdate(timeUs_t currentTimeUs)
             break;
         }
     }
+}
+
+void fspPushSensorFrame(timeUs_t currentTimeUs)
+{
+    // Initialize next capture time if not valid
+    if (!fspState.nextCaptureTimeValid) {
+        fspState.nextCaptureTimeValid = true;
+        fspState.nextCaptureTimeValid = currentTimeUs;
+    }
+
+    // Check if it's time for the next capture
+    if (cmpTimeUs(currentTimeUs, fspState.nextCaptureTimeUs) < 0) {
+        return;
+    }
+
+    // Schedule next capture time
+    const timeDelta_t targetDelta = 10000000 / (FSP_SENSOR_FRAME_BATCH_COUNT * FSP_PERIOD_HZ);
+    fspState.nextCaptureTimeUs += targetDelta;
+
+    // Check if there is space in the queue
+    if (fspState.sensorFrameQueueHead == (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE) {
+        // Queue is full
+        return;
+    }
+
+    // Fill frame
+    fspSensorFrame_t *frame = &fspState.sensorFrameQueue[fspState.sensorFrameQueueHead];
+    fspState.sensorFrameQueueHead = (fspState.sensorFrameQueueHead + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
+
+    frame->timestamp = currentTimeUs;
+    frame->acc.x = lrintf(acc.accADCf.x);
+    frame->acc.y = lrintf(acc.accADCf.y);
+    frame->acc.z = lrintf(acc.accADCf.z);
+    frame->acc1G = acc.dev.acc_1G;
+    frame->gyro.x = gyroRateDps(0);
+    frame->gyro.y = gyroRateDps(1);
+    frame->gyro.z = gyroRateDps(2);
+    frame->gyroDpsLsb = gyro.scale;
+    frame->attitude.w = lrintf(imuAttitudeQuaternion.w * FSP_QUATERNION_SCALE);
+    frame->attitude.x = lrintf(imuAttitudeQuaternion.x * FSP_QUATERNION_SCALE);
+    frame->attitude.y = lrintf(imuAttitudeQuaternion.y * FSP_QUATERNION_SCALE);
+    frame->attitude.z = lrintf(imuAttitudeQuaternion.z * FSP_QUATERNION_SCALE);
+    frame->rc.roll = lrintf(rcData[ROLL]);
+    frame->rc.pitch = lrintf(rcData[PITCH]);
+    frame->rc.yaw = lrintf(rcData[YAW]);
+    frame->rc.throttle = lrintf(rcData[THROTTLE]);
+    frame->rc.aux3 = lrintf(rcData[AUX3]);
+    frame->rc.aux4 = lrintf(rcData[AUX4]);
+    for (int i = 0; i < 4; i++) {
+        frame->rpm[i] = getDshotRpm(i);
+    }
+    frame->batteryVoltage = getBatteryVoltage();
 }
 
 void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_t *status)

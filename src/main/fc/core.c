@@ -109,6 +109,8 @@
 
 #include "core.h"
 
+#include "fsp/fsp.h"
+
 enum {
     ALIGN_GYRO = 0,
     ALIGN_ACCEL = 1,
@@ -1263,6 +1265,12 @@ static FAST_CODE_NOINLINE void subTaskPidSubprocesses(timeUs_t currentTimeUs)
     if (!cliMode && blackboxConfig()->device) {
         blackboxUpdate(currentTimeUs);
     }
+#else
+    UNUSED(currentTimeUs);
+#endif
+
+#ifdef USE_FSP
+    fspPushSensorFrame(currentTimeUs);
 #else
     UNUSED(currentTimeUs);
 #endif
