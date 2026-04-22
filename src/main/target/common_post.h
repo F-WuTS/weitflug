@@ -683,15 +683,10 @@ extern struct linker_symbol __config_end;
 #endif // USE_PINIO
 
 
-// Flyby Serial Protocol
-// #ifndef USE_FSP
-// #define USE_FSP
-// #endif
+// Flyby Extensions
 
 // MSP Push
-#ifndef USE_MSP_PUSH
 // #define USE_MSP_PUSH
-#endif
 
 // Accelerometer RPM Filter
 #ifndef USE_ACC_RPM_FILTER
@@ -704,5 +699,9 @@ extern struct linker_symbol __config_end;
 #endif
 
 #ifndef FSP_PERIOD_HZ
-#define FSP_PERIOD_HZ 1000
+#define FSP_PERIOD_HZ 1100 // Works well with 3.2kHz PID loop
+#endif
+
+#ifndef FSP_PID_LOCKSTEP
+#define FSP_PID_LOCKSTEP
 #endif

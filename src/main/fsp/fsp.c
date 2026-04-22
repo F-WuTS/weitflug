@@ -6,6 +6,7 @@
 #include "fsp/fsp_frame.h"
 
 #include "common/crc.h"
+#include "common/maths.h"
 #include "common/time.h"
 #include "common/utils.h"
 #include "drivers/dshot.h"
@@ -30,8 +31,13 @@ typedef struct {
     // Buffers are aligned to 4 bytes to allow reinterpreting as fspFcRxPacket_t/fspFcTxPacket_t without copying
     uint8_t inBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4)));  // +2 for COBS overhead
     uint8_t outBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4))); // +2 for COBS overhead
+#ifdef FSP_PID_LOCKSTEP
+    size_t captureCounter;
+    size_t captureInterval;
+#else
     timeUs_t nextCaptureTimeUs;
     bool nextCaptureTimeValid;
+#endif
     fspSensorFrame_t sensorFrameQueue[FSP_SENSOR_FRAME_QUEUE_SIZE];
     size_t sensorFrameQueueHead, sensorFrameQueueTail;
     uint8_t mavlinkPacketBuffer[MAVLINK_MAX_PACKET_LEN];
@@ -47,6 +53,13 @@ void rxMspFrameReceive(const uint16_t *frame, int channelCount);
 void fspInit(void)
 {
     memset(&fspState, 0, sizeof(fspState_t));
+
+#ifdef FSP_PID_LOCKSTEP
+    // Capture sample at every Nth PID loop iteration, N is chosen to capture the sample at
+    // the largest possible frequency <= FSP_PERIOD_HZ so the queue is certain to be consumed
+    // fast enough regardless of batching.
+    fspState.captureInterval = HZ_TO_INTERVAL_US(FSP_PERIOD_HZ) / gyro.targetLooptime + 1;
+#endif
 
     const serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_FSP);
     if (portConfig) {
@@ -209,7 +222,19 @@ void fspUpdate(timeUs_t currentTimeUs)
     fspReceiveFrames(currentTimeUs);
 }
 
-void fspPushSensorFrame(timeUs_t currentTimeUs)
+#ifdef FSP_PID_LOCKSTEP
+bool fspFrameDue(timeUs_t currentTimeUs)
+{
+    UNUSED(currentTimeUs);
+    fspState.captureCounter++;
+    if (fspState.captureCounter >= fspState.captureInterval) {
+        fspState.captureCounter = 0;
+        return true;
+    }
+    return false;
+}
+#else
+bool fspFrameDue(timeUs_t currentTimeUs)
 {
     // Initialize next capture time if not valid
     if (!fspState.nextCaptureTimeValid) {
@@ -218,13 +243,23 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     }
 
     // Check if it's time for the next capture
-    if (cmpTimeUs(currentTimeUs, fspState.nextCaptureTimeUs) < 0) {
-        return;
+    bool due = cmpTimeUs(currentTimeUs, fspState.nextCaptureTimeUs) >= 0;
+
+    if (due) {
+        // Schedule next capture time
+        const timeDelta_t targetDelta = 1000000 / FSP_PERIOD_HZ;
+        fspState.nextCaptureTimeUs += targetDelta;
     }
 
-    // Schedule next capture time
-    const timeDelta_t targetDelta = 1000000 / FSP_PERIOD_HZ;
-    fspState.nextCaptureTimeUs += targetDelta;
+    return due;
+}
+#endif
+
+void fspPushSensorFrame(timeUs_t currentTimeUs)
+{
+    if (!fspFrameDue(currentTimeUs)) {
+        return;
+    }
 
     // Check if there is space in the queue
     if (((fspState.sensorFrameQueueHead + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE) == fspState.sensorFrameQueueTail) {
