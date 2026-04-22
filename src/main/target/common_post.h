@@ -704,5 +704,5 @@ extern struct linker_symbol __config_end;
 #endif
 
 #ifndef FSP_PERIOD_HZ
-#define FSP_PERIOD_HZ 500
+#define FSP_PERIOD_HZ 1000
 #endif

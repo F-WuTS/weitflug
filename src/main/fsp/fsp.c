@@ -23,7 +23,7 @@
 
 #define FSP_MAX_PACKET_SIZE 255
 #define FSP_MAVLINK_BUFFER_SIZE 512
-#define FSP_SENSOR_FRAME_QUEUE_SIZE FSP_SENSOR_FRAME_BATCH_COUNT + 2
+#define FSP_SENSOR_FRAME_QUEUE_SIZE (FSP_SENSOR_FRAME_BATCH_COUNT + 3)
 
 typedef struct {
     struct serialPort_s *port;
@@ -155,9 +155,8 @@ void fspUpdate(timeUs_t currentTimeUs)
     // Copy sensor frames from queue to packet
     for (size_t i = 0; i < FSP_SENSOR_FRAME_BATCH_COUNT; i++) {
         txPacket.sensorFrames[i] = fspState.sensorFrameQueue[fspState.sensorFrameQueueTail];
+        fspState.sensorFrameQueueTail = (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
     }
-    fspState.sensorFrameQueueTail =
-        (fspState.sensorFrameQueueTail + FSP_SENSOR_FRAME_BATCH_COUNT) % FSP_SENSOR_FRAME_QUEUE_SIZE;
 
     // Tunnel recorded MAVLink messages from buffer
     size_t mavlinkLen = fspMavlinkBufferRead(txPacket.mavlink.data, sizeof(txPacket.mavlink.data));
@@ -207,7 +206,7 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     // Initialize next capture time if not valid
     if (!fspState.nextCaptureTimeValid) {
         fspState.nextCaptureTimeValid = true;
-        fspState.nextCaptureTimeValid = currentTimeUs;
+        fspState.nextCaptureTimeUs = currentTimeUs;
     }
 
     // Check if it's time for the next capture
@@ -216,12 +215,12 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     }
 
     // Schedule next capture time
-    const timeDelta_t targetDelta = 10000000 / (FSP_SENSOR_FRAME_BATCH_COUNT * FSP_PERIOD_HZ);
+    const timeDelta_t targetDelta = 1000000 / FSP_PERIOD_HZ;
     fspState.nextCaptureTimeUs += targetDelta;
 
     // Check if there is space in the queue
-    if (fspState.sensorFrameQueueHead == (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE) {
-        // Queue is full
+    if (((fspState.sensorFrameQueueHead + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE) == fspState.sensorFrameQueueTail) {
+        // No space in the queue, drop the frame
         return;
     }
 
