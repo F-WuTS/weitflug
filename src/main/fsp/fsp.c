@@ -1,4 +1,3 @@
-#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -7,7 +6,6 @@
 #include "fsp/fsp_frame.h"
 
 #include "common/crc.h"
-#include "common/maths.h"
 #include "common/time.h"
 #include "common/utils.h"
 #include "drivers/dshot.h"
@@ -130,20 +128,8 @@ static size_t fspMavlinkBufferRead(uint8_t *data, size_t len)
     return len;
 }
 
-void fspUpdate(timeUs_t currentTimeUs)
+static void fspSendFrames(timeUs_t currentTimeUs)
 {
-    if (!fspState.port) {
-        return;
-    }
-
-    // Check if FSP_SENSOR_FRAME_BATCH_COUNT frames are available in the queue
-    size_t framesAvailable =
-        (fspState.sensorFrameQueueHead + FSP_SENSOR_FRAME_QUEUE_SIZE - fspState.sensorFrameQueueTail) %
-        FSP_SENSOR_FRAME_QUEUE_SIZE;
-    if (framesAvailable < FSP_SENSOR_FRAME_BATCH_COUNT) {
-        return;
-    }
-
     fspFcTxPacket_t txPacket = {
         .header =
             {
@@ -168,6 +154,11 @@ void fspUpdate(timeUs_t currentTimeUs)
                       &encodedLength)) {
         serialWriteBuf(fspState.port, fspState.outBuf, encodedLength);
     }
+}
+
+static void fspReceiveFrames(timeUs_t currentTimeUs)
+{
+    UNUSED(currentTimeUs);
 
     while (serialRxBytesWaiting(fspState.port)) {
         const uint8_t c = serialRead(fspState.port);
@@ -199,6 +190,23 @@ void fspUpdate(timeUs_t currentTimeUs)
             break;
         }
     }
+}
+
+void fspUpdate(timeUs_t currentTimeUs)
+{
+    if (!fspState.port) {
+        return;
+    }
+
+    // Check if FSP_SENSOR_FRAME_BATCH_COUNT frames are available in the queue
+    size_t framesAvailable =
+        (fspState.sensorFrameQueueHead + FSP_SENSOR_FRAME_QUEUE_SIZE - fspState.sensorFrameQueueTail) %
+        FSP_SENSOR_FRAME_QUEUE_SIZE;
+    if (framesAvailable >= FSP_SENSOR_FRAME_BATCH_COUNT) {
+        fspSendFrames(currentTimeUs);
+    }
+
+    fspReceiveFrames(currentTimeUs);
 }
 
 void fspPushSensorFrame(timeUs_t currentTimeUs)
