@@ -21,8 +21,11 @@
 #include "sensors/gyro_init.h"
 
 #define FSP_MAX_PACKET_SIZE 255
-#define FSP_MAVLINK_BUFFER_SIZE 512
 #define FSP_SENSOR_FRAME_QUEUE_SIZE (FSP_SENSOR_FRAME_BATCH_COUNT + 3)
+
+#ifdef FSP_ENABLE_MAVLINK
+#define FSP_MAVLINK_BUFFER_SIZE 512
+#endif
 
 typedef struct {
     struct serialPort_s *port;
@@ -40,9 +43,11 @@ typedef struct {
 #endif
     fspSensorFrame_t sensorFrameQueue[FSP_SENSOR_FRAME_QUEUE_SIZE];
     size_t sensorFrameQueueHead, sensorFrameQueueTail;
+#ifdef FSP_ENABLE_MAVLINK
     uint8_t mavlinkPacketBuffer[MAVLINK_MAX_PACKET_LEN];
     uint8_t mavlinkBuffer[FSP_MAVLINK_BUFFER_SIZE];
     size_t mavlinkBufferHead, mavlinkBufferTail;
+#endif
 } fspState_t;
 
 static fspState_t fspState;
@@ -83,6 +88,7 @@ void fspInit(void)
     }
 }
 
+#ifdef FSP_ENABLE_MAVLINK
 static bool fspMavlinkBufferWrite(const uint8_t *data, size_t len)
 {
     if (fspState.mavlinkBufferHead < fspState.mavlinkBufferTail) {
@@ -141,6 +147,14 @@ static size_t fspMavlinkBufferRead(uint8_t *data, size_t len)
     return len;
 }
 
+void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_t *status)
+{
+  (void)status;
+  uint16_t length = mavlink_msg_to_send_buffer(fspState.mavlinkPacketBuffer, msg);
+  fspMavlinkBufferWrite(fspState.mavlinkPacketBuffer, length);
+}
+#endif
+
 static void fspSendFrames(timeUs_t currentTimeUs)
 {
     fspFcTxPacket_t txPacket = {
@@ -157,9 +171,11 @@ static void fspSendFrames(timeUs_t currentTimeUs)
         fspState.sensorFrameQueueTail = (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
     }
 
+#ifdef FSP_ENABLE_MAVLINK
     // Tunnel recorded MAVLink messages from buffer
     size_t mavlinkLen = fspMavlinkBufferRead(txPacket.mavlink.data, sizeof(txPacket.mavlink.data));
     memset(txPacket.mavlink.data + mavlinkLen, 0, sizeof(txPacket.mavlink.data) - mavlinkLen);
+#endif
 
     size_t encodedLength;
     txPacket.crc = crc8_update(0xFF, &txPacket, sizeof(txPacket) - 1, FSP_CRC_POLY);
@@ -294,11 +310,4 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
         frame->rpm[i] = getDshotRpm(i);
     }
     frame->batteryVoltage = getBatteryVoltage();
-}
-
-void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_t *status)
-{
-    (void)status;
-    uint16_t length = mavlink_msg_to_send_buffer(fspState.mavlinkPacketBuffer, msg);
-    fspMavlinkBufferWrite(fspState.mavlinkPacketBuffer, length);
 }

@@ -146,7 +146,7 @@ STATIC_UNIT_TESTED void mavlinkDataReceive(uint16_t c, void *data)
         case MAVLINK_MSG_ID_RADIO_STATUS:
             handleIncoming_RADIO_STATUS();
             break;
-        #ifdef USE_FSP
+        #if defined USE_FSP && defined FSP_ENABLE_MAVLINK
         default:
             fspHandleMavlinkMessage(&mavRecvMsg, &mavRecvStatus);
             break;

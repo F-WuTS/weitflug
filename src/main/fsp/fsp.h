@@ -10,4 +10,6 @@
 void fspInit(void);
 void fspUpdate(timeUs_t currentTimeUs);
 void fspPushSensorFrame(timeUs_t currentTimeUs);
+#ifdef FSP_ENABLE_MAVLINK
 void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_t *status);
+#endif
