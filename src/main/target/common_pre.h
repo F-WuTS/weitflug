@@ -561,3 +561,17 @@
     #define GYRO_COUNT 1
   #endif
 #endif
+
+// Flyby Extensions
+
+#ifdef PERF_DISABLE_ATTITUDE
+#undef USE_GPS
+#undef USE_GPS_RESCUE
+#undef USE_BARO
+#undef USE_ALTITUDE_HOLD
+#undef USE_POSITION_HOLD
+#endif
+
+#ifndef ACC_TASK_PERIOD_HZ
+#define ACC_TASK_PERIOD_HZ 1000 // default from betaflight, but some senors support higher rates
+#endif

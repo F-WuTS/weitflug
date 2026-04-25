@@ -377,8 +377,10 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_PID] = DEFINE_TASK("PID", NULL, NULL, taskMainPidLoop, TASK_GYROPID_DESIRED_PERIOD, TASK_PRIORITY_REALTIME),
 
 #ifdef USE_ACC
-    [TASK_ACCEL] = DEFINE_TASK("ACC", NULL, NULL, taskUpdateAccelerometer, TASK_PERIOD_HZ(1000), TASK_PRIORITY_MEDIUM),
-    [TASK_ATTITUDE] = DEFINE_TASK("ATTITUDE", NULL, NULL, imuUpdateAttitude, TASK_PERIOD_HZ(1000), TASK_PRIORITY_MEDIUM),
+    [TASK_ACCEL] = DEFINE_TASK("ACC", NULL, NULL, taskUpdateAccelerometer, TASK_PERIOD_HZ(ACC_TASK_PERIOD_HZ), TASK_PRIORITY_MEDIUM),
+#ifndef PERF_DISABLE_ATTITUDE
+    [TASK_ATTITUDE] = DEFINE_TASK("ATTITUDE", NULL, NULL, imuUpdateAttitude, TASK_PERIOD_HZ(ACC_TASK_PERIOD_HZ), TASK_PRIORITY_MEDIUM),
+#endif
 #endif
 
     [TASK_RX] = DEFINE_TASK("RX", NULL, rxUpdateCheck, taskUpdateRxMain, TASK_PERIOD_HZ(33), TASK_PRIORITY_HIGH), // If event-based scheduling doesn't work, fallback to periodic scheduling
@@ -546,7 +548,9 @@ void tasksInit(void)
     if (sensors(SENSOR_ACC) && acc.sampleRateHz) {
         setTaskEnabled(TASK_ACCEL, true);
         rescheduleTask(TASK_ACCEL, TASK_PERIOD_HZ(acc.sampleRateHz));
+#ifndef PERF_DISABLE_ATTITUDE
         setTaskEnabled(TASK_ATTITUDE, true);
+#endif
     }
 #endif
 
