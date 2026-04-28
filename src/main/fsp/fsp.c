@@ -149,9 +149,9 @@ static size_t fspMavlinkBufferRead(uint8_t *data, size_t len)
 
 void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_t *status)
 {
-  (void)status;
-  uint16_t length = mavlink_msg_to_send_buffer(fspState.mavlinkPacketBuffer, msg);
-  fspMavlinkBufferWrite(fspState.mavlinkPacketBuffer, length);
+    (void)status;
+    uint16_t length = mavlink_msg_to_send_buffer(fspState.mavlinkPacketBuffer, msg);
+    fspMavlinkBufferWrite(fspState.mavlinkPacketBuffer, length);
 }
 #endif
 

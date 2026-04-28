@@ -14,10 +14,11 @@ extern "C" {
 |      └── version = 5 (example)
 └──────── MAVLink enabled/ disabled
  */
-#define FSP_VERSION_MASK   0x7F  // 0111 1111 (lower 7 bits)
-#define MAVLINK_FLAG_MASK  0x80  // 1000 0000 (MSB)
-#define MAKE_FSP_VERSION(version, mavlink_enabled) ( ((version) & FSP_VERSION_MASK) | ((mavlink_enabled) ? MAVLINK_FLAG_MASK : 0) )
-#define FSP_GET_VERSION(v)        ((v) & FSP_VERSION_MASK)
+#define FSP_VERSION_MASK 0x7F  // 0111 1111 (lower 7 bits)
+#define MAVLINK_FLAG_MASK 0x80 // 1000 0000 (MSB)
+#define MAKE_FSP_VERSION(version, mavlink_enabled)                                                                     \
+    (((version) & FSP_VERSION_MASK) | ((mavlink_enabled) ? MAVLINK_FLAG_MASK : 0))
+#define FSP_GET_VERSION(v) ((v) & FSP_VERSION_MASK)
 #define FSP_IS_MAVLINK_ENABLED(v) (((v) & MAVLINK_FLAG_MASK) != 0)
 
 // actual FSP version number
@@ -38,7 +39,7 @@ extern "C" {
 
 typedef struct {
     uint8_t version;
-    uint32_t reserved: 24;
+    uint32_t reserved : 24;
     uint32_t timestamp;
 } fspPacketHeader_t;
 
@@ -80,7 +81,7 @@ typedef struct {
 typedef struct {
     fspPacketHeader_t header;
     fspRcData_t rc;
-    uint32_t reserved: 24;
+    uint32_t reserved : 24;
     uint8_t crc;
 } fspFcRxPacket_t;
 
@@ -90,7 +91,7 @@ typedef struct {
 #ifdef FSP_ENABLE_MAVLINK
     fspMavlinkTunnel_t mavlink;
 #endif
-    uint32_t reserved2: 24;
+    uint32_t reserved2 : 24;
     uint8_t crc;
 } fspFcTxPacket_t;
 
