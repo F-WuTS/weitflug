@@ -25,7 +25,7 @@
 
 #include "platform.h"
 
-#if defined(USE_ESC_SENSOR)
+#if defined(USE_ESC_SENSOR) && !defined(ESC_XR8_PRO)
 
 #include "build/debug.h"
 

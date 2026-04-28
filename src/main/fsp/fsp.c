@@ -18,7 +18,10 @@
 #include "rx/rx.h"
 #include "sensors/acceleration.h"
 #include "sensors/battery.h"
+#include "sensors/esc_sensor.h"
 #include "sensors/gyro_init.h"
+
+#include "platform.h"
 
 #define FSP_MAX_PACKET_SIZE 255
 #define FSP_SENSOR_FRAME_QUEUE_SIZE (FSP_SENSOR_FRAME_BATCH_COUNT + 3)
@@ -306,8 +309,19 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->rc.throttle = lrintf(rcData[THROTTLE]);
     frame->rc.aux3 = lrintf(rcData[AUX3]);
     frame->rc.aux4 = lrintf(rcData[AUX4]);
+
+#if defined(ESC_XR8_PRO)
+    escSensorData_t *esc = getEscSensorData(0);
+    if (esc) {
+        frame->rpm[0] = esc->rpm;
+        frame->rpm[1] = esc->current;
+        frame->rpm[2] = esc->voltage;
+        frame->rpm[3] = esc->temperature;
+    }
+#else
     for (int i = 0; i < 4; i++) {
         frame->rpm[i] = getDshotRpm(i);
     }
+#endif
     frame->batteryVoltage = getBatteryVoltage();
 }
