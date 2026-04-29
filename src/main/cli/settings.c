@@ -113,6 +113,7 @@
 #include "pg/rcdevice.h"
 #include "pg/stats.h"
 #include "pg/board.h"
+#include "pg/throttle_control.h"
 
 #include "rx/a7105_flysky.h"
 #include "rx/cc2500_frsky_common.h"
@@ -2043,6 +2044,17 @@ const clivalue_t valueTable[] = {
     { "gimbal_yaw_limit",          VAR_INT8 | MASTER_VALUE, .config.minmaxUnsigned = { -100, 100 }, PG_GIMBAL_TRACK_CONFIG, offsetof(gimbalTrackConfig_t, gimbal_yaw_limit) },
     { "gimbal_stabilisation",      VAR_INT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 7 }, PG_GIMBAL_TRACK_CONFIG, offsetof(gimbalTrackConfig_t, gimbal_stabilisation) },
     { "gimbal_sensitivity",        VAR_INT8 | MASTER_VALUE, .config.minmaxUnsigned = { -16, 15 }, PG_GIMBAL_TRACK_CONFIG, offsetof(gimbalTrackConfig_t, gimbal_sensitivity) },
+#endif
+
+// PG_THROTTLE_CONTROL_CONFIG
+#if defined(USE_THROTTLE_CONTROL)
+    { "throttle_control_min", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1000, 2000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_min) },
+    { "throttle_control_max", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1000, 2000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_max) },
+    { "throttle_control_min_rpm", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_min_rpm) },
+    { "throttle_control_max_rpm", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_max_rpm) },
+    { "throttle_control_kp", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 255 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_kp) },
+    { "throttle_control_ki", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 255 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ki) },
+    { "throttle_control_max_integral", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_max_integral) },
 #endif
 };
 

@@ -162,6 +162,7 @@
 
 #define PG_WEITFLUG_START           700
 #define PG_ACC_RPM_FILTER_CONFIG    700
+#define PG_THROTTLE_CONTROL_CONFIG  701
 
 // OSD configuration (subject to change)
 #define PG_OSD_FONT_CONFIG 2047

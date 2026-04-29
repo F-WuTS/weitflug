@@ -43,6 +43,7 @@ PG_SRC = \
             pg/sdio.c \
             pg/serial_uart.c \
             pg/stats.c \
+            pg/throttle_control.c \
             pg/timerio.c \
             pg/timerup.c \
             pg/usb.c \
@@ -178,6 +179,7 @@ COMMON_SRC = \
             flight/rpm_filter.c \
             flight/servos.c \
             flight/servos_tricopter.c \
+            flight/throttle_control.c \
             io/serial_4way.c \
             io/serial_4way_avrootloader.c \
             io/serial_4way_stk500v2.c \
@@ -454,6 +456,7 @@ SPEED_OPTIMISED_SRC += \
             flight/mixer.c \
             flight/pid.c \
             flight/rpm_filter.c \
+            flight/throttle_control.c \
             rx/ibus.c \
             rx/rc_stats.c \
             rx/rx.c \

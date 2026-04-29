@@ -54,6 +54,7 @@
 #include "flight/mixer_tricopter.h"
 #include "flight/pid.h"
 #include "flight/rpm_filter.h"
+#include "flight/throttle_control.h"
 
 #include "io/gps.h"
 
@@ -818,6 +819,10 @@ FAST_CODE_NOINLINE void mixTable(timeUs_t currentTimeUs)
     if (FLIGHT_MODE(GPS_RESCUE_MODE)) {
         throttle = getAutopilotThrottle();
     }
+#endif
+
+#ifdef USE_THROTTLE_CONTROL
+    throttle = getControlledThrottle();
 #endif
 
     motorMixRange = motorMixMax - motorMixMin;

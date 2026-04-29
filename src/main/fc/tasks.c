@@ -81,6 +81,7 @@
 #include "msp/msp_push.h"
 
 #include "fsp/fsp.h"
+#include "flight/throttle_control.h"
 
 #include "osd/osd.h"
 
@@ -488,6 +489,10 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_FSP] = DEFINE_TASK("FSP", NULL, NULL, fspUpdate, TASK_PERIOD_HZ(FSP_PERIOD_HZ), TASK_PRIORITY_LOW),
 #endif
 
+#ifdef USE_THROTTLE_CONTROL
+    [TASK_THROTTLE_CONTROL] = DEFINE_TASK("THROTTLE_CONTROL", NULL, NULL, throttleControlUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_MEDIUM_HIGH),
+#endif
+
 #ifdef USE_GIMBAL
     [TASK_GIMBAL] = DEFINE_TASK("GIMBAL", NULL, NULL, gimbalUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_MEDIUM),
 #endif
@@ -694,6 +699,10 @@ void tasksInit(void)
 
 #ifdef USE_FSP
     setTaskEnabled(TASK_FSP, true);
+#endif
+
+#ifdef USE_THROTTLE_CONTROL
+    setTaskEnabled(TASK_THROTTLE_CONTROL, true);
 #endif
 
 }

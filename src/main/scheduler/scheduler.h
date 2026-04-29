@@ -197,6 +197,9 @@ typedef enum {
 #ifdef USE_FSP
     TASK_FSP,
 #endif
+#ifdef USE_THROTTLE_CONTROL
+    TASK_THROTTLE_CONTROL,
+#endif
 
     /* Count of real tasks */
     TASK_COUNT,

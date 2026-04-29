@@ -104,6 +104,7 @@
 #include "flight/position.h"
 #include "flight/pos_hold.h"
 #include "flight/servos.h"
+#include "flight/throttle_control.h"
 
 #include "io/asyncfatfs/asyncfatfs.h"
 #include "io/beeper.h"
@@ -1004,6 +1005,10 @@ void initPhase3(void)
     if (featureIsEnabled(FEATURE_GPS)) {
         gpsRescueInit();
     }
+#endif
+
+#ifdef USE_THROTTLE_CONTROL
+    throttleControlInit();
 #endif
 
     debugInit();
