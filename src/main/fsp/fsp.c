@@ -318,7 +318,7 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
         frame->rpm[2] = esc->voltage;
         frame->rpm[3] = esc->temperature;
     }
-#else
+#elif defined(USE_DSHOT_TELEMETRY)
     for (int i = 0; i < 4; i++) {
         frame->rpm[i] = getDshotRpm(i);
     }

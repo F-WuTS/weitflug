@@ -24,7 +24,7 @@
 
 #include "platform.h"
 
-#if defined(USE_ESC_SENSOR) && defined(ESC_XR8_PRO)
+#if defined(ESC_XR8_PRO)
 
 #include "common/time.h"
 #include "config/feature.h"

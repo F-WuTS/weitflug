@@ -568,6 +568,7 @@
 
 #ifndef USE_DSHOT_TELEMETRY
 #undef USE_RPM_FILTER
+#undef USE_ACC_RPM_FILTER
 #undef USE_DSHOT_TELEMETRY_STATS
 #undef USE_DYN_IDLE
 #endif
@@ -684,13 +685,17 @@ extern struct linker_symbol __config_end;
 
 
 // Flyby Extensions
+// TODO: this is not the right place to put default values for our custom defines,
+// it should be used to disable features that are not supported because of other missing feautures
 
 // MSP Push
 // #define USE_MSP_PUSH
 
 // Accelerometer RPM Filter
+#ifdef USE_DSHOT_TELEMETRY
 #ifndef USE_ACC_RPM_FILTER
 #define USE_ACC_RPM_FILTER
+#endif
 #endif
 
 // FSP protocol
