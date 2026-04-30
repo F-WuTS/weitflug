@@ -19,8 +19,10 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "platform.h"
 
@@ -32,8 +34,7 @@
 #include "io/serial.h"
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
-
-#include "esc_sensor.h"
+#include "sensors/esc_sensor_xr8pro.h"
 
 PG_REGISTER_WITH_RESET_TEMPLATE(escSensorConfig_t, escSensorConfig, PG_ESC_SENSOR_CONFIG, 0);
 
@@ -43,12 +44,12 @@ PG_RESET_TEMPLATE(escSensorConfig_t, escSensorConfig, .halfDuplex = 0);
 #define TELEMETRY_FRAME_SIZE 32
 #define TELEMETRY_TIMEOUT_US 5000 // 5 ms timeout to reset rx buffer
 
-static uint8_t telemetryBuffers[2][TELEMETRY_FRAME_SIZE] = {0};
-static volatile uint8_t *rxBuffer = telemetryBuffers[0];
+static volatile uint8_t rxBuffer[sizeof(xr8ProTelemetryFrame_t)] = {0};
 static volatile size_t rxBufferIdx = 0;
 
 static serialPort_t *escSensorPort = NULL;
 
+static xr8ProTelemetryFrame_t escFrame;
 static escSensorData_t escSensorData;
 
 static size_t lastRxCount = 0;
@@ -75,6 +76,8 @@ void startEscDataRead(uint8_t *frameBuffer, uint8_t frameLength)
 }
 
 uint8_t getNumberEscBytesRead(void) { return 0; }
+
+const xr8ProTelemetryFrame_t *escSensorXR8ProFrame(void) { return &escFrame; }
 
 uint8_t calculateCrc8(const uint8_t *Buf, const uint8_t BufLen)
 {
@@ -129,46 +132,24 @@ static uint16_t calculateCrc16Modbus(const uint8_t *data, size_t length)
     return crc;
 }
 
-static bool decodeEscFrame(const uint8_t *telemetryBuffer)
+static bool decodeEscFrame(const xr8ProTelemetryFrame_t *frame)
 {
-    // # Assignments:
-    // - 0-1: header (fe01)
-    // - 2-8: unknown
-    // - 9: throttle in % (uint8)
-    // - 10: throttle in % (uint8)
-    // - 11: reverse (00 / 02)
-    // - 12: unknown
-    // - 13-14: RPM in units of 10 (uint16 little endian)
-    // - 15-16: Voltage in 0.1 V (uint16 little endian)
-    // - 17-18: Current in 0.1 A (uint16 little endian)
-    // - 19-20: ESC temperature in °C (uint16 little endian)
-    // - 21-22: Motor temperature in °C (uint16 little endian)
-    // - 23-29: Unknown
-    // - 30-31: CRC-16/MODBUS of bytes 0-29 (uint16 little endian)
-
-    // PACKET_FORMAT = "<2s 7x BBB x 5H 7x H"
-    // header, throttle1, throttle2, reverse, rpm, voltage, current, esc_temp, motor_temp, crc =
-    // struct.unpack(PACKET_FORMAT, packet) if header != b'\xFE\x01':
-    //     print("Invalid header")
-    //     continue
-
     // Check CRC
-    uint16_t receivedCrc = telemetryBuffer[30] | (telemetryBuffer[31] << 8);
-    uint16_t calculatedCrc = calculateCrc16Modbus(telemetryBuffer, 30);
-    if (receivedCrc != calculatedCrc) {
+    uint16_t crc = calculateCrc16Modbus((const uint8_t *)frame, offsetof(xr8ProTelemetryFrame_t, crc));
+    if (frame->crc != crc) {
         return false;
     }
 
     // Check header
-    if (telemetryBuffer[0] != 0xFE || telemetryBuffer[1] != 0x01) {
+    if (frame->header != 0x01fe) {
         return false;
     }
 
     escSensorData.dataAge = 0;
-    escSensorData.temperature = telemetryBuffer[19] | (telemetryBuffer[20] << 8);
-    escSensorData.voltage = (telemetryBuffer[15] | (telemetryBuffer[16] << 8)) * 10;
-    escSensorData.current = (telemetryBuffer[17] | (telemetryBuffer[18] << 8)) * 10;
-    escSensorData.rpm = (telemetryBuffer[13] | (telemetryBuffer[14] << 8)) * 10;
+    escSensorData.temperature = frame->escTemperature;
+    escSensorData.voltage = frame->voltage * 10;
+    escSensorData.current = frame->current * 10;
+    escSensorData.rpm = frame->rpm * 10;
 
     return true;
 }
@@ -192,11 +173,14 @@ void escSensorProcess(timeUs_t currentTimeUs)
     }
 
     if (rxBufferIdx == TELEMETRY_FRAME_SIZE) {
-        // Swap buffers
-        const uint8_t *completedBuffer = (const uint8_t *)rxBuffer;
-        rxBuffer = (rxBuffer == telemetryBuffers[0]) ? telemetryBuffers[1] : telemetryBuffers[0];
+        // Copy received data to escFrame structure
+        // Note: memcpy is not used since it is incopatible with volatile data
+        for (size_t i = 0; i < TELEMETRY_FRAME_SIZE; i++) {
+            ((uint8_t *)&escFrame)[i] = rxBuffer[i];
+        }
+        // Resetting buffer index after makes sure we can copy uninterrupted by the ISR
         rxBufferIdx = 0;
-        if (!decodeEscFrame(completedBuffer)) {
+        if (!decodeEscFrame(&escFrame)) {
             increaseDataAge();
         }
     }

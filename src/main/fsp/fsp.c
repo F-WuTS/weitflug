@@ -18,7 +18,7 @@
 #include "rx/rx.h"
 #include "sensors/acceleration.h"
 #include "sensors/battery.h"
-#include "sensors/esc_sensor.h"
+#include "sensors/esc_sensor_xr8pro.h"
 #include "sensors/gyro_init.h"
 
 #include "platform.h"
@@ -317,6 +317,12 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
         frame->rpm[1] = esc->current;
         frame->rpm[2] = esc->voltage;
         frame->rpm[3] = esc->temperature;
+    }
+    xr8ProTelemetryFrame_t *escFrame = (xr8ProTelemetryFrame_t *)escSensorXR8ProFrame();
+    if (escFrame) {
+        frame->rc.throttle = escFrame->reverse;
+        frame->rc.aux3 = escFrame->throttle1;
+        frame->rc.aux4 = escFrame->throttle2;
     }
 #elif defined(USE_DSHOT_TELEMETRY)
     for (int i = 0; i < 4; i++) {
