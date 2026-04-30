@@ -16,6 +16,8 @@ PG_RESET_TEMPLATE(throttleControlConfig_t, throttleControlConfig,
     .throttle_kp = 5,
     .throttle_ki = 1,
     .throttle_max_integral = 1000,
+    .throttle_esc_deadband = 3,
+    .throttle_esc_brake_strength = 40,
 );
 
 #endif // USE_THROTTLE_CONTROL

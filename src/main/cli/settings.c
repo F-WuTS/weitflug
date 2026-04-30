@@ -2055,6 +2055,8 @@ const clivalue_t valueTable[] = {
     { "throttle_control_kp", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 255 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_kp) },
     { "throttle_control_ki", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 255 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ki) },
     { "throttle_control_max_integral", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_max_integral) },
+    { "throttle_control_esc_deadband", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_esc_deadband) },
+    { "throttle_control_esc_brake_strength", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_esc_brake_strength) },
 #endif
 };
 

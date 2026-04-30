@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "fsp/fsp.h"
+#include "flight/throttle_control.h"
 #include "fsp/fsp_cobs.h"
 #include "fsp/fsp_frame.h"
 
@@ -328,6 +329,10 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     for (int i = 0; i < 4; i++) {
         frame->rpm[i] = getDshotRpm(i);
     }
+#endif
+
+#if defined (USE_THROTTLE_CONTROL)
+    frame->rc.throttle = lrintf(getControlledThrottle() * 10000.0f);
 #endif
     frame->batteryVoltage = getBatteryVoltage();
 }
