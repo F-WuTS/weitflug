@@ -41,7 +41,11 @@ void analogInitEndpoints(const motorConfig_t *motorConfig, float outputLimit, fl
         *deadbandMotor3dHigh = flight3DConfig()->deadband3d_high;
         *deadbandMotor3dLow = flight3DConfig()->deadband3d_low;
     } else {
+#if defined(USE_THROTTLE_CONTROL)
+        *disarm = 1500;
+#else
         *disarm = motorConfig->mincommand;
+#endif
         const float minThrottle = motorConfig->mincommand + motorConfig->motorIdle * 0.1f;
         *outputLow = minThrottle;
         *outputHigh = motorConfig->maxthrottle - ((motorConfig->maxthrottle - minThrottle) * (1 - outputLimit));
