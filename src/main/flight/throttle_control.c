@@ -10,11 +10,6 @@
 
 #include <math.h>
 
-#define THROTTLE_MIN 1550.0f
-#define THROTTLE_MAX 2000.0f
-#define THROTTLE_MIN_RPM 500.0f
-#define THROTTLE_MAX_RPM 5000.0f
-
 static struct {
     float controlledThrottle;
     float kp;
@@ -26,10 +21,11 @@ static struct {
 static float mapThrottle(float throttle)
 {
     float deadband = (float)throttleControlConfig()->throttle_esc_deadband * 0.01f;
+    float escBrakeStrength = (float)throttleControlConfig()->throttle_esc_brake_strength * 0.01f;
     if (throttle >= 0.0f) {
         return scaleRangef(throttle, 0.0f, 1.0f, 0.5f + deadband, 1.0f);
     } else {
-        return scaleRangef(throttle, -1.0f, 0.0f, 0.0f, 0.5f - deadband);
+        return scaleRangef(throttle, -escBrakeStrength, 0.0f, 0.0f, (0.5f - deadband));
     }
 }
 
