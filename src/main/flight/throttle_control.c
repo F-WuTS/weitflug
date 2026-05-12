@@ -40,7 +40,7 @@ void throttleControlInit(void)
     tcRuntime.lastError = 0.0f;
     tcRuntime.kp = (float)throttleControlConfig()->throttle_kp * 1e-7f;
     tcRuntime.ki = (float)throttleControlConfig()->throttle_ki * 1e-7f / THROTTLE_CONTROL_TASK_RATE_HZ;
-    tcRuntime.kd = (float)throttleControlConfig()->throttle_kd * 1e-7f * THROTTLE_CONTROL_TASK_RATE_HZ;
+    tcRuntime.kd = (float)throttleControlConfig()->throttle_kd * 1e-9f * THROTTLE_CONTROL_TASK_RATE_HZ;
     tcRuntime.maxIntegral = (float)throttleControlConfig()->throttle_max_integral * 1e-5f;
 }
 
