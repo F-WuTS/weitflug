@@ -12,6 +12,7 @@ typedef struct throttleControlConfig_s
     uint16_t throttle_max_rpm;
     uint16_t throttle_kp;
     uint16_t throttle_ki;
+    uint16_t throttle_kd;
     uint16_t throttle_max_integral;
     uint8_t throttle_esc_deadband;
     uint8_t throttle_esc_brake_strength;

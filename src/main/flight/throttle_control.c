@@ -14,8 +14,10 @@ static struct {
     float controlledThrottle;
     float kp;
     float ki;
+    float kd;
     float errorIntegral;
     float maxIntegral;
+    float lastError;
 } tcRuntime;
 
 static float mapThrottle(float throttle)
@@ -24,7 +26,8 @@ static float mapThrottle(float throttle)
     float escBrakeStrength = (float)throttleControlConfig()->throttle_esc_brake_strength * 0.01f;
     if (throttle >= 0.0f) {
         return scaleRangef(throttle, 0.0f, 1.0f, 0.5f + deadband, 1.0f);
-    } else {
+    }
+    else {
         return scaleRangef(throttle, -escBrakeStrength, 0.0f, 0.0f, (0.5f - deadband));
     }
 }
@@ -33,8 +36,10 @@ void throttleControlInit(void)
 {
     tcRuntime.controlledThrottle = 0.0f;
     tcRuntime.errorIntegral = 0.0f;
+    tcRuntime.lastError = 0.0f;
     tcRuntime.kp = (float)throttleControlConfig()->throttle_kp * 1e-7f;
     tcRuntime.ki = (float)throttleControlConfig()->throttle_ki * 1e-7f / THROTTLE_CONTROL_TASK_RATE_HZ;
+    tcRuntime.kd = (float)throttleControlConfig()->throttle_kd * 1e-7f * THROTTLE_CONTROL_TASK_RATE_HZ;
     tcRuntime.maxIntegral = (float)throttleControlConfig()->throttle_max_integral * 1e-5f;
 }
 
@@ -58,9 +63,10 @@ void throttleControlUpdate(timeUs_t currentTimeUs)
     tcRuntime.errorIntegral += tcRuntime.ki * error;
     tcRuntime.errorIntegral = constrainf(tcRuntime.errorIntegral, -tcRuntime.maxIntegral, tcRuntime.maxIntegral);
 
-    float throttle = tcRuntime.kp * error + tcRuntime.errorIntegral;
+    float throttle = tcRuntime.kp * error + tcRuntime.errorIntegral + tcRuntime.kd * (error - tcRuntime.lastError);
     throttle = constrainf(throttle, -1.0f, 1.0f);
     tcRuntime.controlledThrottle = mapThrottle(throttle);
+    tcRuntime.lastError = error;
 
     DEBUG_SET(DEBUG_WING_SETPOINT, 0, lrintf(throttleSetpoint));
     DEBUG_SET(DEBUG_WING_SETPOINT, 1, lrintf(currentRpm));
