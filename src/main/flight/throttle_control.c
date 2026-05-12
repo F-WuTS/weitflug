@@ -3,6 +3,7 @@
 #include "build/debug.h"
 #include "common/maths.h"
 #include "fc/rc_controls.h"
+#include "fc/runtime_config.h"
 #include "pg/throttle_control.h"
 #include "platform.h"
 #include "rx/rx.h"
@@ -45,7 +46,11 @@ void throttleControlInit(void)
 
 void throttleControlUpdate(timeUs_t currentTimeUs)
 {
-    UNUSED(currentTimeUs);
+    (void)currentTimeUs;
+
+    if (!ARMING_FLAG(ARMED)) {
+        return;
+    }
 
     float throttleMin = throttleControlConfig()->throttle_min;
     float throttleMax = throttleControlConfig()->throttle_max;
