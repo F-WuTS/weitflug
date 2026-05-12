@@ -321,9 +321,8 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     }
     xr8ProTelemetryFrame_t *escFrame = (xr8ProTelemetryFrame_t *)escSensorXR8ProFrame();
     if (escFrame) {
-        frame->rc.throttle = escFrame->reverse;
+        frame->rc.roll = escFrame->reverse;
         frame->rc.aux3 = escFrame->throttle1;
-        frame->rc.aux4 = escFrame->throttle2;
     }
 #elif defined(USE_DSHOT_TELEMETRY)
     for (int i = 0; i < 4; i++) {
