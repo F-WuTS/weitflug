@@ -16,6 +16,7 @@ static struct {
     float kp;
     float ki;
     float kd;
+    float kff;
     float errorIntegral;
     float maxIntegral;
     float lastError;
@@ -41,6 +42,7 @@ void throttleControlInit(void)
     tcRuntime.kp = (float)throttleControlConfig()->throttle_kp * 1e-7f;
     tcRuntime.ki = (float)throttleControlConfig()->throttle_ki * 1e-7f / THROTTLE_CONTROL_TASK_RATE_HZ;
     tcRuntime.kd = (float)throttleControlConfig()->throttle_kd * 1e-9f * THROTTLE_CONTROL_TASK_RATE_HZ;
+    tcRuntime.kff = 1.0f / (float)throttleControlConfig()->throttle_motor_kv;
     tcRuntime.maxIntegral = (float)throttleControlConfig()->throttle_max_integral * 1e-5f;
 }
 
@@ -63,12 +65,16 @@ void throttleControlUpdate(timeUs_t currentTimeUs)
 
     escSensorData_t *escData = getEscSensorData(0);
     float currentRpm = (float)escData->rpm;
+    float voltage = escData->voltage * 0.01f;
 
     float error = throttleSetpoint - currentRpm;
     tcRuntime.errorIntegral += tcRuntime.ki * error;
     tcRuntime.errorIntegral = constrainf(tcRuntime.errorIntegral, -tcRuntime.maxIntegral, tcRuntime.maxIntegral);
 
-    float throttle = tcRuntime.kp * error + tcRuntime.errorIntegral + tcRuntime.kd * (error - tcRuntime.lastError);
+    float throttle = (tcRuntime.kff / voltage * throttleSetpoint +   // feedforward term
+                      tcRuntime.kp * error +                         // proportional term
+                      tcRuntime.errorIntegral +                      // integral term
+                      tcRuntime.kd * (error - tcRuntime.lastError)); // derivative term
     throttle = constrainf(throttle, -1.0f, 1.0f);
     tcRuntime.controlledThrottle = mapThrottle(throttle);
     tcRuntime.lastError = error;

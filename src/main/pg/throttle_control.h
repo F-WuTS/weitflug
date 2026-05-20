@@ -16,6 +16,7 @@ typedef struct throttleControlConfig_s
     uint16_t throttle_max_integral;
     uint8_t throttle_esc_deadband;
     uint8_t throttle_esc_brake_strength;
+    uint16_t throttle_motor_kv;
 } throttleControlConfig_t;
 
 PG_DECLARE(throttleControlConfig_t, throttleControlConfig);
