@@ -10,7 +10,8 @@ typedef struct {
     uint8_t throttle1;        // 9: throttle in % (uint8)
     uint8_t throttle2;        // 10: throttle in % (uint8)
     uint8_t reverse;          // 11: reverse (00 / 02)
-    uint32_t rpm : 24;        // 12-14: RPM in units of 10
+    uint8_t unknown2;         // 12: unknown
+    uint16_t rpm;             // 13-14: RPM in units of 10
     uint16_t voltage;         // 15-16: Voltage in 0.1 V
     int16_t current;          // 17-18: Current in 0.1 A
     int16_t escTemperature;   // 19-20: ESC temperature in °C
