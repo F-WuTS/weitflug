@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "rx/rx.h"
 #include "sensors/esc_sensor.h"
+#include "sensors/esc_sensor_xr8pro.h"
 
 #include <math.h>
 
@@ -64,7 +65,13 @@ void throttleControlUpdate(timeUs_t currentTimeUs)
     throttleSetpoint = scaleRangef(throttleSetpoint, throttleMin, throttleMax, throttleMinRpm, throttleMaxRpm);
 
     escSensorData_t *escData = getEscSensorData(0);
-    float currentRpm = (float)escData->rpm;
+#if defined(ESC_XR8_PRO)
+    // Use higher resolution if available from XR8 Pro telemetry
+    xr8ProTelemetryFrame_t *escFrame = (xr8ProTelemetryFrame_t *)escSensorXR8ProFrame();
+    float currentRpm = escFrame ? (float)escFrame->rpm * 10.0f : 0.0f;
+#else
+    float currentRpm = escData ? (float)escData->rpm * 100.0f : 0.0f;
+#endif
     float voltage = escData->voltage * 0.01f;
 
     float error = throttleSetpoint - currentRpm;

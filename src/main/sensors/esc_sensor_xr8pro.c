@@ -149,7 +149,7 @@ static bool decodeEscFrame(const xr8ProTelemetryFrame_t *frame)
     escSensorData.temperature = frame->escTemperature;
     escSensorData.voltage = frame->voltage * 10;
     escSensorData.current = frame->current * 10;
-    escSensorData.rpm = frame->rpm * 10;
+    escSensorData.rpm = frame->rpm / 10;
 
     return true;
 }

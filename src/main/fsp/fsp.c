@@ -311,18 +311,16 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->rc.aux3 = lrintf(rcData[AUX3]);
     frame->rc.aux4 = lrintf(rcData[AUX4]);
 
-#if defined(ESC_XR8_PRO)
+#if defined(ESC_XR8_PRO) && FSP_CAR_FIRMWARE_FLAG
     escSensorData_t *esc = getEscSensorData(0);
-    if (esc) {
-        frame->rpm[0] = esc->rpm;
-        frame->rpm[1] = esc->current;
-        frame->rpm[2] = esc->voltage;
-        frame->rpm[3] = esc->temperature;
-    }
     xr8ProTelemetryFrame_t *escFrame = (xr8ProTelemetryFrame_t *)escSensorXR8ProFrame();
-    if (escFrame) {
-        frame->rc.roll = escFrame->reverse;
-        frame->rc.aux3 = escFrame->throttle1;
+    if (esc && escFrame) {
+        frame->erpm = escFrame->rpm * 10;
+        frame->esc_current = esc->current;
+        frame->esc_temperature = esc->temperature;
+        frame->esc_reverse = escFrame->reverse;
+        frame->esc_throttle = escFrame->throttle1;
+        frame->controller_throttle = lrintf(getControlledThrottle() * 10000.0f);
     }
 #elif defined(USE_DSHOT_TELEMETRY)
     for (int i = 0; i < 4; i++) {
@@ -331,7 +329,9 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
 #endif
 
 #if defined (USE_THROTTLE_CONTROL)
-    frame->rc.throttle = lrintf(getControlledThrottle() * 10000.0f);
+    frame->controller_throttle = lrintf(getControlledThrottle() * 10000.0f);
+#else
+    frame->controller_throttle = 0;
 #endif
     frame->batteryVoltage = getBatteryVoltage();
 }
