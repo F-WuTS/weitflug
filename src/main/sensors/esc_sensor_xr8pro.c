@@ -151,6 +151,8 @@ static bool decodeEscFrame(const xr8ProTelemetryFrame_t *frame)
     escSensorData.current = frame->current * 10;
     escSensorData.rpm = frame->rpm / 10;
 
+    escFrame = *frame;
+
     return true;
 }
 
@@ -175,12 +177,13 @@ void escSensorProcess(timeUs_t currentTimeUs)
     if (rxBufferIdx == TELEMETRY_FRAME_SIZE) {
         // Copy received data to escFrame structure
         // Note: memcpy is not used since it is incopatible with volatile data
+        xr8ProTelemetryFrame_t frame = {0};
         for (size_t i = 0; i < TELEMETRY_FRAME_SIZE; i++) {
-            ((uint8_t *)&escFrame)[i] = rxBuffer[i];
+            ((uint8_t *)&frame)[i] = rxBuffer[i];
         }
         // Resetting buffer index after makes sure we can copy uninterrupted by the ISR
         rxBufferIdx = 0;
-        if (!decodeEscFrame(&escFrame)) {
+        if (!decodeEscFrame(&frame)) {
             increaseDataAge();
         }
     }
