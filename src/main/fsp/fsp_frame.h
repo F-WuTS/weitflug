@@ -85,7 +85,7 @@ typedef struct {
     fspAtt_t attitude;
     fspRcData_t rc;
 #if FSP_CAR_FIRMWARE_FLAG
-    uint32_t erpm;
+    uint32_t rpm;
 #else
     uint16_t rpm[4];
 #endif

@@ -52,6 +52,7 @@ typedef struct {
     uint8_t mavlinkBuffer[FSP_MAVLINK_BUFFER_SIZE];
     size_t mavlinkBufferHead, mavlinkBufferTail;
 #endif
+    float escToRpmScale;
 } fspState_t;
 
 static fspState_t fspState;
@@ -69,6 +70,8 @@ void fspInit(void)
     // fast enough regardless of batching.
     fspState.captureInterval = HZ_TO_INTERVAL_US(FSP_PERIOD_HZ) / gyro.targetLooptime + 1;
 #endif
+
+    fspState.escToRpmScale = 10.0f / (motorConfig()->motorPoleCount / 2.0f);
 
     const serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_FSP);
     if (portConfig) {
@@ -315,7 +318,7 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     escSensorData_t *esc = getEscSensorData(0);
     xr8ProTelemetryFrame_t *escFrame = (xr8ProTelemetryFrame_t *)escSensorXR8ProFrame();
     if (esc && escFrame) {
-        frame->erpm = escFrame->rpm * 10;
+        frame->rpm = escFrame->rpm * fspState.escToRpmScale;
         frame->esc_current = esc->current;
         frame->esc_temperature = esc->temperature;
         frame->esc_reverse = escFrame->reverse;

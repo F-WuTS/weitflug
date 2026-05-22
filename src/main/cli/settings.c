@@ -2055,10 +2055,15 @@ const clivalue_t valueTable[] = {
     { "throttle_control_kp", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_kp) },
     { "throttle_control_ki", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ki) },
     { "throttle_control_kd", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_kd) },
-    { "throttle_control_motor_kv", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_motor_kv) },
     { "throttle_control_max_integral", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_max_integral) },
     { "throttle_control_esc_deadband", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_esc_deadband) },
     { "throttle_control_esc_brake_strength", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_esc_brake_strength) },
+    { "throttle_control_ff_voltage_min", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 480 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_voltage_min) },
+    { "throttle_control_ff_motor_kv", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_motor_kv) },
+    { "throttle_control_ff_max_accel", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 500 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_max_accel) },
+    { "throttle_control_ff_drag_curve", VAR_UINT16 | MASTER_VALUE | MODE_ARRAY, .config.array.length = THROTTLE_FF_DRAG_CURVE_SIZE, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_drag_curve) },
+    { "throttle_control_ff_accel_curve", VAR_UINT16 | MASTER_VALUE | MODE_ARRAY, .config.array.length = THROTTLE_FF_ACCEL_CURVE_SIZE, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_accel_curve) },
+    { "throttle_control_ff_brake_curve", VAR_UINT16 | MASTER_VALUE | MODE_ARRAY, .config.array.length = THROTTLE_FF_BRAKE_CURVE_SIZE, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_brake_curve) },
 #endif
 };
 
