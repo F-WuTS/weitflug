@@ -72,15 +72,6 @@ void fspInit(void)
     const serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_FSP);
     if (portConfig) {
         portOptions_e options = SERIAL_NOT_INVERTED | SERIAL_STOPBITS_1 | SERIAL_PARITY_NO;
-        if (serialType(portConfig->identifier) == SERIALTYPE_UART ||
-            serialType(portConfig->identifier) == SERIALTYPE_LPUART ||
-            serialType(portConfig->identifier) == SERIALTYPE_PIOUART) {
-            // TODO: SERIAL_CHECK_TX is broken on F7, disable it until it is fixed
-#if !defined(STM32F7) || defined(USE_F7_CHECK_TX)
-            options |= SERIAL_CHECK_TX;
-#endif
-        }
-
         serialPort_t *serialPort = openSerialPort(portConfig->identifier, FUNCTION_MSP, NULL, NULL,
                                                   baudRates[portConfig->msp_baudrateIndex], MODE_RXTX, options);
         if (serialPort) {
