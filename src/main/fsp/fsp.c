@@ -302,6 +302,10 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->rc.pitch = lrintf(rcData[PITCH]);
     frame->rc.yaw = lrintf(rcData[YAW]);
     frame->rc.throttle = lrintf(rcData[THROTTLE]);
+#if FSP_CAR_FIRMWARE_FLAG
+    frame->rc.aux1 = lrintf(rcData[AUX1]);
+    frame->rc.aux2 = lrintf(rcData[AUX2]);
+#endif
     frame->rc.aux3 = lrintf(rcData[AUX3]);
     frame->rc.aux4 = lrintf(rcData[AUX4]);
 
