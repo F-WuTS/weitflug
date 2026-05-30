@@ -123,6 +123,11 @@ FAST_CODE void throttleControlUpdate(timeUs_t currentTimeUs)
     float pid = tcRuntime.kp * error +                        // proportional term
                 tcRuntime.errorIntegral +                     // integral term
                 tcRuntime.kd * (error - tcRuntime.lastError); // derivative term
+    if (rcData[AUX3] >= 1500) {
+        // If AUX3 is high, disable PID and only use feedforward (for testing/tuning)
+        tcRuntime.errorIntegral = 0.0f;
+        pid = 0.0f;
+    }
 
     float throttle = constrainf(rpm_ff + drag_ff + accel_ff + pid, -1.0f, 1.0f);
     tcRuntime.controlledThrottle = mapThrottle(throttle);
