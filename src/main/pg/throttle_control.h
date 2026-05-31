@@ -35,6 +35,8 @@ typedef struct throttleControlConfig_s
     uint16_t throttle_ff_accel_curve[THROTTLE_FF_ACCEL_CURVE_SIZE];
     uint16_t throttle_ff_brake_curve[THROTTLE_FF_BRAKE_CURVE_SIZE];
     uint8_t throttle_rpm_filter_cuttoff_hz;
+    uint8_t throttle_rpm_setpoint_tau_ms;
+    uint16_t throttle_brake_disable_rpm;
 } throttleControlConfig_t;
 
 PG_DECLARE(throttleControlConfig_t, throttleControlConfig);

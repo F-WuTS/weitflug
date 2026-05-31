@@ -2065,6 +2065,8 @@ const clivalue_t valueTable[] = {
     { "throttle_control_ff_accel_curve", VAR_UINT16 | MASTER_VALUE | MODE_ARRAY, .config.array.length = THROTTLE_FF_ACCEL_CURVE_SIZE, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_accel_curve) },
     { "throttle_control_ff_brake_curve", VAR_UINT16 | MASTER_VALUE | MODE_ARRAY, .config.array.length = THROTTLE_FF_BRAKE_CURVE_SIZE, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_ff_brake_curve) },
     { "throttle_control_rpm_filter_cutoff_hz", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_rpm_filter_cuttoff_hz) },
+    { "throttle_control_rpm_setpoint_tau_ms", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_rpm_setpoint_tau_ms) },
+    { "throttle_control_brake_disable_rpm", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_THROTTLE_CONTROL_CONFIG, offsetof(throttleControlConfig_t, throttle_brake_disable_rpm) },
 #endif
 };
 

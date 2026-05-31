@@ -3,6 +3,7 @@
 #include "build/debug.h"
 #include "common/filter.h"
 #include "common/maths.h"
+#include "fc/rc.h"
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
 #include "pg/motor.h"
@@ -32,6 +33,7 @@ FAST_DATA_ZERO_INIT static struct {
     float maxIntegral;
     float lastError;
     pt2Filter_t rpmFilter;
+    pt1Filter_t rpmSetpointFilter;
 } tcRuntime;
 
 static float mapThrottle(float throttle)
@@ -57,9 +59,9 @@ void throttleControlInit(void)
     tcRuntime.esc_lsb_to_rpm = 100.0f / (motorConfig()->motorPoleCount / 2.0f);
 #endif
     tcRuntime.voltage_min = (float)throttleControlConfig()->throttle_ff_voltage_min * THROTTLE_FF_VOLTAGE_MIN_SCALE;
-    tcRuntime.kp = (float)throttleControlConfig()->throttle_kp * 1e-7f;
-    tcRuntime.ki = (float)throttleControlConfig()->throttle_ki * 1e-7f / THROTTLE_CONTROL_TASK_RATE_HZ;
-    tcRuntime.kd = (float)throttleControlConfig()->throttle_kd * 1e-9f * THROTTLE_CONTROL_TASK_RATE_HZ;
+    tcRuntime.kp = (float)throttleControlConfig()->throttle_kp * 1e-5f;
+    tcRuntime.ki = (float)throttleControlConfig()->throttle_ki * 1e-5f / THROTTLE_CONTROL_TASK_RATE_HZ;
+    tcRuntime.kd = (float)throttleControlConfig()->throttle_kd * 1e-7f * THROTTLE_CONTROL_TASK_RATE_HZ;
     tcRuntime.k_rpm_ff = 1.0f / (float)throttleControlConfig()->throttle_ff_motor_kv;
     tcRuntime.ff_accel_scale =
         (float)throttleControlConfig()->throttle_ff_max_accel * THROTTLE_FF_MAX_ACCEL_SCALE / 500.0f;
@@ -70,11 +72,13 @@ void throttleControlInit(void)
     tcRuntime.brakeCurve[0] = (float)throttleControlConfig()->throttle_ff_brake_curve[0] * THROTTLE_FF_BRAKE_SCALE_1;
     tcRuntime.maxIntegral = (float)throttleControlConfig()->throttle_max_integral * 1e-5f;
 
+    float dT = 1.0f / THROTTLE_CONTROL_TASK_RATE_HZ;
     if (throttleControlConfig()->throttle_rpm_filter_cuttoff_hz > 0) {
         float cutoffHz = (float)throttleControlConfig()->throttle_rpm_filter_cuttoff_hz;
-        float dT = 1.0f / THROTTLE_CONTROL_TASK_RATE_HZ;
         pt2FilterInit(&tcRuntime.rpmFilter, pt2FilterGain(cutoffHz, dT));
     }
+    pt1FilterInit(&tcRuntime.rpmSetpointFilter,
+                  pt1FilterGainFromDelay(throttleControlConfig()->throttle_rpm_setpoint_tau_ms * 1e-3f, dT));
 }
 
 FAST_CODE void throttleControlUpdate(timeUs_t currentTimeUs)
@@ -99,6 +103,8 @@ FAST_CODE void throttleControlUpdate(timeUs_t currentTimeUs)
     throttleSetpoint = scaleRangef(throttleSetpoint, throttleMin, throttleMax, throttleMinRpm, throttleMaxRpm);
     accelerationSetpoint = accelerationSetpoint * tcRuntime.ff_accel_scale;
 
+    float filteredThrottleSetpoint = pt1FilterApply(&tcRuntime.rpmSetpointFilter, throttleSetpoint);
+
     escSensorData_t *escData = getEscSensorData(0);
 #if defined(ESC_XR8_PRO)
     // Use higher resolution if available from XR8 Pro telemetry
@@ -115,36 +121,44 @@ FAST_CODE void throttleControlUpdate(timeUs_t currentTimeUs)
     float voltage = MAX(escData->voltage * 0.01f, tcRuntime.voltage_min);
 
     float error = throttleSetpoint - currentRpm;
+    float filteredError = filteredThrottleSetpoint - currentRpm;
     tcRuntime.errorIntegral += tcRuntime.ki * error;
     tcRuntime.errorIntegral = constrainf(tcRuntime.errorIntegral, -tcRuntime.maxIntegral, tcRuntime.maxIntegral);
 
     float rpm_ff = tcRuntime.k_rpm_ff / voltage * throttleSetpoint; // rpm feedforward term
     // Drag feedforward terms
-    float drag_ff = tcRuntime.dragCurve[0] * currentRpm * currentRpm + tcRuntime.dragCurve[1] * currentRpm;
-    // Acceleration feedforward terms
-    float accel_ff;
-    if (accelerationSetpoint >= 0.0f) {
-        accel_ff = (tcRuntime.accelCurve[0] * accelerationSetpoint * accelerationSetpoint +
-                    tcRuntime.accelCurve[1] * accelerationSetpoint) /
-                   voltage;
-    }
-    else {
-        accel_ff = tcRuntime.brakeCurve[0] * accelerationSetpoint;
-    }
+    float drag_ff = (tcRuntime.dragCurve[0] * currentRpm * currentRpm + tcRuntime.dragCurve[1] * currentRpm) / voltage;
 
-    // PID Terms
-    float pid = tcRuntime.kp * error +                        // proportional term
-                tcRuntime.errorIntegral +                     // integral term
-                tcRuntime.kd * (error - tcRuntime.lastError); // derivative term
+    // PID Terms, PID output is acceleration
+    float pid = tcRuntime.kp * error +                                // proportional term
+                tcRuntime.errorIntegral +                             // integral term
+                tcRuntime.kd * (filteredError - tcRuntime.lastError); // derivative term
     if (rcData[AUX3] >= 1500) {
         // If AUX3 is high, disable PID and only use feedforward (for testing/tuning)
         tcRuntime.errorIntegral = 0.0f;
         pid = 0.0f;
     }
 
-    float throttle = constrainf(rpm_ff + drag_ff + accel_ff + pid, -1.0f, 1.0f);
+    float total_accel = pid + accelerationSetpoint;
+
+    // Acceleration feedforward terms
+    float throttle_accel;
+    if (total_accel >= 0.0f) {
+        throttle_accel =
+            (tcRuntime.accelCurve[0] * total_accel * total_accel + tcRuntime.accelCurve[1] * total_accel) / voltage;
+    }
+    else {
+        throttle_accel = tcRuntime.brakeCurve[0] * total_accel;
+    }
+
+    float throttle = constrainf(rpm_ff + drag_ff + throttle_accel, -1.0f, 1.0f);
     tcRuntime.controlledThrottle = mapThrottle(throttle);
-    tcRuntime.lastError = error;
+    tcRuntime.lastError = filteredError;
+
+    if (currentRpm < throttleControlConfig()->throttle_brake_disable_rpm) {
+        // If below certain RPM, disable braking (to prevent sticking when trying to take off)
+        tcRuntime.controlledThrottle = MAX(tcRuntime.controlledThrottle, 0.5f);
+    }
 
     DEBUG_SET(DEBUG_WING_SETPOINT, 0, lrintf(throttleSetpoint));
     DEBUG_SET(DEBUG_WING_SETPOINT, 1, lrintf(currentRpm));
