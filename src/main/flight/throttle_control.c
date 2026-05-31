@@ -1,6 +1,7 @@
 #include "flight/throttle_control.h"
 
 #include "build/debug.h"
+#include "common/filter.h"
 #include "common/maths.h"
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
@@ -30,6 +31,7 @@ FAST_DATA_ZERO_INIT static struct {
     float errorIntegral;
     float maxIntegral;
     float lastError;
+    pt2Filter_t rpmFilter;
 } tcRuntime;
 
 static float mapThrottle(float throttle)
@@ -67,6 +69,12 @@ void throttleControlInit(void)
     tcRuntime.accelCurve[1] = (float)throttleControlConfig()->throttle_ff_accel_curve[1] * THROTTLE_FF_ACCEL_SCALE_1;
     tcRuntime.brakeCurve[0] = (float)throttleControlConfig()->throttle_ff_brake_curve[0] * THROTTLE_FF_BRAKE_SCALE_1;
     tcRuntime.maxIntegral = (float)throttleControlConfig()->throttle_max_integral * 1e-5f;
+
+    if (throttleControlConfig()->throttle_rpm_filter_cuttoff_hz > 0) {
+        float cutoffHz = (float)throttleControlConfig()->throttle_rpm_filter_cuttoff_hz;
+        float dT = 1.0f / THROTTLE_CONTROL_TASK_RATE_HZ;
+        pt2FilterInit(&tcRuntime.rpmFilter, pt2FilterGain(cutoffHz, dT));
+    }
 }
 
 FAST_CODE void throttleControlUpdate(timeUs_t currentTimeUs)
@@ -99,6 +107,11 @@ FAST_CODE void throttleControlUpdate(timeUs_t currentTimeUs)
 #else
     float currentRpm = escData ? (float)escData->rpm * tcRuntime.esc_lsb_to_rpm : 0.0f;
 #endif
+
+    if (throttleControlConfig()->throttle_rpm_filter_cuttoff_hz > 0) {
+        currentRpm = pt2FilterApply(&tcRuntime.rpmFilter, currentRpm);
+    }
+
     float voltage = MAX(escData->voltage * 0.01f, tcRuntime.voltage_min);
 
     float error = throttleSetpoint - currentRpm;

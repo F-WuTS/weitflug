@@ -6,7 +6,7 @@
 #include "pg/pg_ids.h"
 #include "pg/throttle_control.h"
 
-PG_REGISTER_WITH_RESET_TEMPLATE(throttleControlConfig_t, throttleControlConfig, PG_THROTTLE_CONTROL_CONFIG, 5);
+PG_REGISTER_WITH_RESET_TEMPLATE(throttleControlConfig_t, throttleControlConfig, PG_THROTTLE_CONTROL_CONFIG, 6);
 
 PG_RESET_TEMPLATE(throttleControlConfig_t, throttleControlConfig,
     .throttle_min = 1550,
@@ -25,6 +25,7 @@ PG_RESET_TEMPLATE(throttleControlConfig_t, throttleControlConfig,
     .throttle_ff_drag_curve = {0, 0},
     .throttle_ff_accel_curve = {0, 0},
     .throttle_ff_brake_curve = {0},
+    .throttle_rpm_filter_cuttoff_hz = 25,
 );
 
 #endif // USE_THROTTLE_CONTROL
