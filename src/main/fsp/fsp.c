@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "fsp/fsp.h"
+#include "drivers/time.h"
 #include "fsp/fsp_cobs.h"
 #include "fsp/fsp_frame.h"
 
@@ -33,6 +34,8 @@
 typedef struct {
     struct serialPort_s *port;
     mspDescriptor_t descriptor;
+    bool telemetryEnabled;
+    timeUs_t lastTelemetryRequestUs;
     fspCobsDecoder_t cobsDecoder;
     // Buffers are aligned to 4 bytes to allow reinterpreting as fspFcRxPacket_t/fspFcTxPacket_t without copying
     uint8_t inBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4)));  // +2 for COBS overhead
@@ -54,6 +57,19 @@ typedef struct {
 } fspState_t;
 
 static fspState_t fspState;
+#if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
+#include "fsp/fsp_imu_filter.h"
+static fspImuPt2Filter_t telemetryAcc, telemetryGyro;
+void fspImuAccelerometerUpdate(const float values[3], unsigned rateHz, timeUs_t timestampUs)
+{
+    fspImuPt2FilterUpdate(&telemetryAcc, values, rateHz, timestampUs);
+}
+void fspImuGyroscopeUpdate(const float values[3], unsigned rateHz, timeUs_t timestampUs)
+{
+    fspImuPt2FilterUpdate(&telemetryGyro, values, rateHz, timestampUs);
+}
+#endif
+
 
 // Forward declare from rx/msp.h, because of a missing typedef in the header
 void rxMspFrameReceive(const uint16_t *frame, int channelCount);
@@ -188,6 +204,16 @@ static void fspReceiveFrames(timeUs_t currentTimeUs)
         size_t decodedLength;
         switch (fspCobsDecoderPush(&fspState.cobsDecoder, c, &decodedLength)) {
         case FSP_COBS_DECODER_DONE:
+            if (decodedLength == sizeof(fspTelemetryHeartbeat_t)) {
+                const fspTelemetryHeartbeat_t *heartbeat = (const fspTelemetryHeartbeat_t *)fspState.inBuf;
+                if (heartbeat->header.version == FSP_VERSION &&
+                    heartbeat->magic == FSP_TELEMETRY_HEARTBEAT_MAGIC &&
+                    crc8_update(0xFF, heartbeat, sizeof(*heartbeat) - 1, FSP_CRC_POLY) == heartbeat->crc) {
+                    fspState.telemetryEnabled = true;
+                    fspState.lastTelemetryRequestUs = currentTimeUs;
+                }
+                break;
+            }
             if (decodedLength == sizeof(fspFcRxPacket_t)) {
                 fspFcRxPacket_t *rxPacket = (fspFcRxPacket_t *)fspState.inBuf;
                 uint8_t crc = crc8_update(0xFF, rxPacket, sizeof(*rxPacket) - 1, FSP_CRC_POLY);
@@ -198,6 +224,8 @@ static void fspReceiveFrames(timeUs_t currentTimeUs)
                     break;
                 }
 
+                fspState.telemetryEnabled = true;
+                fspState.lastTelemetryRequestUs = currentTimeUs;
                 uint16_t frame[] = {
                     [0] = rxPacket->rc.roll, [1] = rxPacket->rc.pitch, [2] = rxPacket->rc.throttle,
                     [3] = rxPacket->rc.yaw,  [6] = rxPacket->rc.aux3,  [7] = rxPacket->rc.aux4,
@@ -221,6 +249,16 @@ void fspUpdate(timeUs_t currentTimeUs)
         return;
     }
 
+    fspReceiveFrames(currentTimeUs);
+    if (fspState.telemetryEnabled &&
+        (timeUs_t)(currentTimeUs - fspState.lastTelemetryRequestUs) >= FSP_TELEMETRY_TIMEOUT_US) {
+        fspState.telemetryEnabled = false;
+    }
+    if (!fspState.telemetryEnabled) {
+        fspState.sensorFrameQueueHead = fspState.sensorFrameQueueTail = 0;
+        return;
+    }
+
     // Check if FSP_SENSOR_FRAME_BATCH_COUNT frames are available in the queue
     size_t framesAvailable =
         (fspState.sensorFrameQueueHead + FSP_SENSOR_FRAME_QUEUE_SIZE - fspState.sensorFrameQueueTail) %
@@ -229,7 +267,6 @@ void fspUpdate(timeUs_t currentTimeUs)
         fspSendFrames(currentTimeUs);
     }
 
-    fspReceiveFrames(currentTimeUs);
 }
 
 #ifdef FSP_PID_LOCKSTEP
@@ -267,10 +304,15 @@ bool fspFrameDue(timeUs_t currentTimeUs)
 
 void fspPushSensorFrame(timeUs_t currentTimeUs)
 {
-    if (!fspFrameDue(currentTimeUs)) {
+    if (!fspState.telemetryEnabled || !fspFrameDue(currentTimeUs)) {
         return;
     }
 
+#if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
+    // Sensor hooks may run after the PID snapshot; check age against micros().
+    const timeUs_t sampleNowUs = micros();
+    if (!fspImuPt2FilterFresh(&telemetryAcc, sampleNowUs) || !fspImuPt2FilterFresh(&telemetryGyro, sampleNowUs)) return;
+#endif
     // Check if there is space in the queue
     if (((fspState.sensorFrameQueueHead + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE) == fspState.sensorFrameQueueTail) {
         // No space in the queue, drop the frame
@@ -282,6 +324,15 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     fspState.sensorFrameQueueHead = (fspState.sensorFrameQueueHead + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
 
     frame->timestamp = currentTimeUs;
+#if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
+    frame->acc.x = lrintf(telemetryAcc.second[0]);
+    frame->acc.y = lrintf(telemetryAcc.second[1]);
+    frame->acc.z = lrintf(telemetryAcc.second[2]);
+    frame->acc1G = acc.dev.acc_1G;
+    frame->gyro.x = lrintf(telemetryGyro.second[0] / gyro.scale);
+    frame->gyro.y = lrintf(telemetryGyro.second[1] / gyro.scale);
+    frame->gyro.z = lrintf(telemetryGyro.second[2] / gyro.scale);
+#else
     frame->acc.x = lrintf(acc.accADCf.x);
     frame->acc.y = lrintf(acc.accADCf.y);
     frame->acc.z = lrintf(acc.accADCf.z);
@@ -289,6 +340,7 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->gyro.x = gyroRateDps(0);
     frame->gyro.y = gyroRateDps(1);
     frame->gyro.z = gyroRateDps(2);
+#endif
     frame->gyroDpsLsb = gyro.scale;
     frame->attitude.w = lrintf(imuAttitudeQuaternion.w * FSP_QUATERNION_SCALE);
     frame->attitude.x = lrintf(imuAttitudeQuaternion.x * FSP_QUATERNION_SCALE);

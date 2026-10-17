@@ -25,20 +25,28 @@
 #include "rx/msp_override.h"
 #include "rx/msp.h"
 #include "fc/rc_modes.h"
+#include "fc/rc_controls.h"
 #include "common/maths.h"
 
 uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rxConfig_t *rxConfig, uint8_t chan)
 {
     uint16_t rxSample = (rxRuntimeState->rcReadRawFn)(rxRuntimeState, chan);
 
-    uint16_t overrideSample = constrainf(rxMspReadRawRC(rxRuntimeState, chan), rxConfig->rx_min_usec, rxConfig->rx_max_usec);
-
-    bool override = (1 << chan) & rxConfig->msp_override_channels_mask;
-
-    if (IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) && override) {
-        return overrideSample;
-    } else {
+    const bool override = (1U << chan) & rxConfig->msp_override_channels_mask;
+    if (!IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) || !override) {
         return rxSample;
     }
+
+    if (!rxMspOverrideIsFresh()) {
+        // Convert the logical fallback through the receiver channel map.
+        for (uint8_t control = 0; control < PRIMARY_CHANNEL_COUNT; ++control) {
+            if (chan == rxConfig->rcmap[control]) {
+                return control == THROTTLE ? PWM_RANGE_MIN : PWM_RANGE_MIDDLE;
+            }
+        }
+        return rxSample;
+    }
+
+    return constrainf(rxMspReadRawRC(rxRuntimeState, chan), rxConfig->rx_min_usec, rxConfig->rx_max_usec);
 }
 #endif

@@ -27,6 +27,10 @@
 #include "platform.h"
 
 #include "build/debug.h"
+#if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
+#include "fsp/fsp.h"
+#include "drivers/time.h"
+#endif
 
 #include "common/axis.h"
 #include "common/maths.h"
@@ -430,6 +434,9 @@ FAST_CODE void gyroUpdate(void)
         gyro.gyroADC[Z] = adcSum[Z] / active;
     }
 
+#if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
+    if (active != 0) fspImuGyroscopeUpdate(gyro.gyroADC, gyro.sampleRateHz, micros());
+#endif
     if (gyro.downsampleFilterEnabled) {
         // using gyro lowpass 2 filter for downsampling
         gyro.sampleSum[X] = gyro.lowpass2FilterApplyFn((filter_t *)&gyro.lowpass2Filter[X], gyro.gyroADC[X]);

@@ -40,6 +40,10 @@
 #include "flight/rpm_filter.h"
 
 #include "acceleration.h"
+#if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
+#include "fsp/fsp.h"
+#include "drivers/time.h"
+#endif
 
 FAST_DATA_ZERO_INIT acc_t acc;                       // acc access functions
 
@@ -121,6 +125,9 @@ void accUpdate(timeUs_t currentTimeUs)
     alignAccelerometer();
     calibrateAccelerometer();
     applyAccelerationTrims(accelerationRuntime.accelerationTrims);
+#if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
+    fspImuAccelerometerUpdate(acc.accADC.v, acc.sampleRateHz, micros());
+#endif
     postProcessAccelerometer();
 
     acc.isAccelUpdatedAtLeastOnce = true;

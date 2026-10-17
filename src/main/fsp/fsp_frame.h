@@ -102,3 +102,14 @@ static_assert((offsetof(fspFcRxPacket_t, crc) == sizeof(fspFcRxPacket_t) - 1), "
 #ifdef __cplusplus
 }
 #endif
+
+// Distinct packet size identifies the telemetry heartbeat.
+#define FSP_TELEMETRY_HEARTBEAT_MAGIC 0x54534C
+#define FSP_TELEMETRY_TIMEOUT_US 500000U
+typedef struct {
+    fspPacketHeader_t header;
+    uint32_t magic : 24;
+    uint8_t crc;
+} fspTelemetryHeartbeat_t;
+static_assert(sizeof(fspTelemetryHeartbeat_t) == 12, "heartbeat wire size");
+static_assert(offsetof(fspTelemetryHeartbeat_t, crc) == 11, "heartbeat CRC offset");
