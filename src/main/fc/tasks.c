@@ -81,6 +81,7 @@
 #include "msp/msp_push.h"
 
 #include "fsp/fsp.h"
+#include "pg/fsp.h"
 
 #include "osd/osd.h"
 
@@ -693,6 +694,7 @@ void tasksInit(void)
 #endif
 
 #ifdef USE_FSP
+    rescheduleTask(TASK_FSP, TASK_PERIOD_HZ(fspConfig()->telemetry_hz));
     setTaskEnabled(TASK_FSP, true);
 #endif
 

@@ -1316,9 +1316,6 @@ static FAST_CODE void subTaskMotorUpdate(timeUs_t currentTimeUs)
 #endif
 
     writeMotors();
-#ifdef USE_FSP
-    fspActionMotorWritten(micros());
-#endif
 
 #ifdef USE_DSHOT_TELEMETRY_STATS
     if (debugMode == DEBUG_DSHOT_RPM_ERRORS && useDshotTelemetry) {

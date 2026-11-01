@@ -1,7 +1,8 @@
 # Flyby Serial Protocol (FSP)
 
-FSP streams FC measurements over UART and accepts companion RC commands through
-the MSP receiver path. Packet definitions live in `src/main/fsp/fsp_frame.h`.
+FSP streams FC measurements over UART and accepts scheduled companion actions
+(RC commands, rates or direct motor outputs). Packet definitions live in
+`src/main/fsp/fsp_frame.h`.
 
 ## Build and configuration
 
@@ -18,20 +19,21 @@ Foxeer H743 (Ghost receiver, DShot, OSD and VTX):
 ./build.sh
 ```
 
-The H7 recipe uses the default 1100 Hz FSP ceiling. The script-specific defaults
+The H7 recipe uses the default 1100 Hz FSP rate. The script-specific defaults
 in the table below refer to `build_f405_mini.sh`.
 
 Assign serial function `524288` (`FUNCTION_FSP`) to a dedicated UART and select
-its MSP baud rate. The link uses non-inverted 8N1.
+its MSP baud rate, e.g. `serial UART2 524288 115200 57600 0 115200`. The link
+uses non-inverted 8N1.
 
 | Define | Default | Meaning |
 | --- | --- | --- |
 | `USE_FSP` | Defined | Enable FSP |
-| `FSP_PERIOD_HZ` | 1100 Hz; script: 600 Hz | I/O task rate and capture-rate ceiling |
+| `FSP_PERIOD_HZ` | 1100 Hz; script: 600 Hz | Default for `fsp_telemetry_hz` |
 | `FSP_PID_LOCKSTEP` | Defined | Capture every Nth PID iteration |
 | `ENABLE_PT2_FILTER_IMU` | Undefined/off; script: 1 | Independent 80 Hz PT2 telemetry filter |
 | `FSP_ENABLE_MAVLINK` | Undefined/off | Include the MAVLink tunnel |
-| `FSP_MAVLINK_TUNNEL_SIZE` | 64 bytes when enabled | Tunnel capacity per packet |
+| `FSP_MAVLINK_TUNNEL_SIZE` | 64 bytes | Maximum MAVLink bytes per packet |
 | `ACC_TASK_PERIOD_HZ` | 1000 Hz | Initial accelerometer/attitude task rate |
 | `PERF_DISABLE_ATTITUDE` | Undefined/off | Remove attitude estimation and related navigation features |
 | `ESC_XR8_PRO` | Undefined/off | Select car ESC telemetry |
@@ -41,74 +43,98 @@ its MSP baud rate. The link uses non-inverted 8N1.
 `FSP_TARGET_HZ` accepts 300, 600 or 1100. Presence-based options (`#ifdef`)
 are disabled by removing their definition, rather than setting them to zero.
 
+CLI settings (parameter group `fspConfig`, applied at boot):
+
+| Setting | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `fsp_telemetry_hz` | `FSP_PERIOD_HZ` | 50..4000 | FSP task rate and capture-rate ceiling |
+| `fsp_telemetry_timeout_ms` | 500 | 50..5000 | Telemetry lease after the last heartbeat or action |
+| `fsp_action_timeout_ms` | 200 | 10..2000 | Neutral outputs this long after the last applied action |
+| `fsp_action_max_ahead_ticks` | 128 | 1..4096 | Actions further ahead are rejected (`HORIZON`) |
+
 ## Telemetry and timing
 
-A valid heartbeat, RC packet or scheduled action starts telemetry and renews
-its **500 ms lease**.
-The heartbeat carries magic `0x54534C` (little-endian bytes `4c 53 54`). Send it
-periodically for telemetry-only operation. Lease expiry stops transmission and
-clears queued samples. RC command freshness has its own 200 ms timer.
+A valid heartbeat or action starts telemetry and renews its lease
+(`fsp_telemetry_timeout_ms`). Send heartbeats periodically for
+telemetry-only operation. Lease expiry stops transmission and clears queued
+samples.
 
 PID-loop captures are batched in pairs. The low-priority FSP task drains a
 four-sample queue; overflow drops new captures. Lockstep sampling uses
-`N = HZ_TO_INTERVAL_US(FSP_PERIOD_HZ) / gyro.targetLooptime + 1` PID iterations.
+`N = HZ_TO_INTERVAL_US(fsp_telemetry_hz) / targetPidLooptime + 1` PID iterations.
 A 2026 Hz PID loop with a 600 Hz ceiling yields about 506 samples/s.
 
-Timestamps are 32-bit FC microseconds (71.6-minute wrap): send-task time in
-the header, PID snapshot time in each sample. Hosts handle clock mapping.
+Timestamps are 32-bit FC microseconds (71.6-minute wrap): send time in the
+header, PID snapshot time in each sample. PID ticks are 32-bit and count
+executed PID iterations; ticks dropped by scheduler overruns are not counted
+(see `skippedTicks` in the stats). Hosts handle clock mapping.
 
 ## Packets
 
-Packets use little-endian C layouts, COBS and a `0x00` delimiter. CRC-8 uses
-polynomial `0xD5`, seed `0xFF`, over bytes preceding the final CRC. Reserved
-fields are zero. Version must match: `0x06`, or `0x86` with MAVLink.
+Each packet is `[header][payload][crc]`, little-endian C layouts, COBS-encoded
+with a `0x00` delimiter. The 8-byte header holds version (`0x07`), packet type,
+two reserved bytes and the sender timestamp. CRC-8 uses polynomial `0xD5`, seed
+`0xFF`, over header and payload. Reserved fields are zero. Packets with a wrong
+version, CRC, type or payload size are ignored.
 
-| Packet | Decoded size |
-| --- | ---: |
-| Heartbeat | 12 bytes |
-| RC command | 24 bytes |
-| Telemetry: two sensor frames | 124 bytes |
-| Telemetry with 64-byte MAVLink tunnel | 188 bytes |
-| Scheduled action | 32 bytes |
-| Action status | 76 bytes |
+| Type | Direction | Payload | Decoded size |
+| ---: | --- | --- | ---: |
+| 1 Heartbeat | host → FC | none | 9 bytes |
+| 2 State | FC → host | two 64-byte sensor frames | 137 bytes |
+| 3 Action | host → FC | `fspPacketAction_t` | 25 bytes |
+| 4 MAVLink | FC → host | 1..64 tunnel bytes | 10..73 bytes |
+| 5 Action ack | FC → host | `fspPacketActionAck_t` | 21 bytes |
+| 6 Stats | FC → host | `fspPacketStats_t` | 29 bytes |
 
-Each 56-byte sensor frame carries timestamp, PID tick, acceleration, gyro, WXYZ attitude,
-RC channels, four RPM values and voltage. Scale acceleration by `1 / acc1G`,
-gyro by `gyroDpsLsb`, quaternion by `1 / 32768`, voltage by `0.01 V`.
-RC telemetry reflects receiver-selected `rcData`. See `fsp_frame.h` for offsets
-and field types; the packet buffer limit is 255 decoded bytes.
+Each sensor frame carries timestamp, PID tick, acceleration, gyro, WXYZ attitude,
+RC channels, four RPM values, voltage and the action state of that tick.
+Scale acceleration by `1 / acc1G`, gyro by `gyroDpsLsb`, quaternion by
+`1 / 32768`, voltage by `0.01 V`. RC telemetry reflects receiver-selected
+`rcData`. See `fsp_frame.h` for offsets and field types.
+
+The FC answers every action with an ack (apply tick, PID tick at receipt,
+result, queue depth) and every heartbeat with a stats packet (rejection
+counters, skipped PID ticks, measured PID period in ns). The host controls the
+stats rate through its heartbeat rate. Acks and stats are dropped when the UART
+TX buffer is full.
 
 ## Scheduled actions
 
-FSP v6 actions carry a sequence, source PID tick, target PID tick and four
-signed 16-bit values. Mode 1 uses roll/pitch/yaw in 0.1 deg/s and collective
-in 0..10000. Mode 2 uses motor indices 0..3 in 0..10000: zero stops the motor;
-positive values map to the configured low/high output endpoints.
+An action carries a target PID tick (`applyTick`), a mode and four signed
+16-bit values:
 
-The four-entry FIFO accepts increasing sequences and target ticks, at most
-128 ticks ahead. The PID task consumes an action only on its target tick;
-late, full-queue, out-of-order and invalid actions return explicit rejection
-codes. Target `sourceTick + N` gives a fixed N-iteration state-to-action delay.
-Use the measured tick duration, since nominal PID period and gyro rate differ.
+| Mode | Values |
+| --- | --- |
+| 1 RC | roll, pitch, yaw, throttle in 1000..2000 us |
+| 2 Rates | roll/pitch/yaw in 0.1 deg/s (±20000), collective 0..10000 |
+| 3 Motors | motor indices 0..3 in 0..10000; zero stops the motor, positive values map to the configured low/high output endpoints |
+
+The four-entry FIFO accepts increasing target ticks, at most
+`fsp_action_max_ahead_ticks` ahead. The PID task applies an action only on its
+target tick; late, full-queue, out-of-order, too-far-ahead and invalid actions
+are rejected with the code in the ack. Targeting `pidTick + N` of a received
+state gives a fixed N-iteration state-to-action delay; compare state
+timestamps or `skippedTicks` to detect scheduler gaps.
 
 Rates enter before rate-error calculation, with radio feedforward excluded;
 collective uses the normal mixer. Direct motor mode bypasses PID/mixing.
-Outputs require arming, physical MSP override, Acro, healthy radio, four motors
-and non-3D/non-launch/non-crash-flip configuration. Authority changes flush
-pending and active actions. Hold the last action between updates; after 200 ms
-without consumption the scheduled path outputs motor-stop values.
+RC actions are fed into the MSP override on their target tick.
 
-Disarmed actions rehearse timing while keeping normal disarmed outputs. Status
-reports received/consumed sequence, requested/consumed tick, FC timestamp,
-software motor-write time, values, external motor outputs, queue depth,
-rejection counters, authority flags and timeout. Status snapshots may coalesce
-when actions arrive faster than the telemetry task; this is not a per-tick log.
-Authority flag bits 0..4 mean armed, override, Acro, radio healthy and supported
-configuration. Physical ESC/motor delay is separate from the software write time.
+Authority:
+- RC actions need the physical MSP override switch and a healthy radio.
+- Rate and motor actions additionally need arming, Acro, four motors and a
+  non-3D/non-launch/non-crash-flip configuration.
 
-USB MSPv2 `0x3F00` accepts the same complete action packet and returns a rejection
-code; `0x3F01` returns the CRC-protected status packet. UART status is emitted on
-commands, consumption, authority/timeout changes and heartbeat requests.
+Any authority change flushes pending and active actions. The active action is
+held between updates; after `fsp_action_timeout_ms` without a new one, rate and
+motor modes output motor-stop values. RC mode falls back through the RC
+override timeout below. Disarmed actions rehearse timing while keeping normal
+disarmed outputs.
+
+Each sensor frame reports the action in effect on its tick: `actionTick`
+(target tick, 0 = none), `actionMode`, `queueDepth` and `actionFlags`:
+bit 0 authority for the active mode (rates/motors when none is active),
+bit 1 the action drove the outputs, bit 2 timed out.
 
 Host tests for the allocation-free scheduler:
 
@@ -120,9 +146,10 @@ cc -std=gnu11 -Wall -Wextra -Werror -Isrc/main \
 
 ## RC override
 
-FSP fills raw receiver channels in **AETR1234** order:
-`roll, pitch, throttle, yaw, 0, 0, AUX3, AUX4`. Configure a matching map and
-mask only the channels the companion supplies.
+RC actions fill raw receiver channels in **AETR** order:
+`roll, pitch, throttle, yaw`; all other channels are zero. Configure a matching
+map and set `msp_override_channels_mask` to channels 0..3 only, so auxiliary
+channels stay with the radio.
 
 | State | Selected primary channels |
 | --- | --- |
@@ -130,9 +157,8 @@ mask only the channels the companion supplies.
 | Override selected, command younger than 200 ms | Companion input |
 | Override selected, command absent or expired | Roll/pitch/yaw 1500, throttle 1000 |
 
-Fresh commands resume immediately. Unmasked channels retain radio input;
-auxiliary channels return to radio input on timeout. Fallback values follow
-`rcmap` and normal receiver-range calibration.
+Fresh commands resume immediately. Unmasked channels retain radio input.
+Fallback values follow `rcmap` and normal receiver-range calibration.
 
 MSP arrivals request receiver processing independently of
 `msp_override_failsafe`; that setting controls whether they also renew the RX

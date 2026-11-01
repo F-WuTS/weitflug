@@ -1,82 +1,153 @@
 #include "fsp_actions.h"
 #include <string.h>
 
-void fspActionsInit(fspActionScheduler_t *s) { memset(s, 0, sizeof(*s)); }
+// Skip and period tracking work in ns; EMA weight 1/64 of each tick
+#define FSP_PERIOD_EMA_SHIFT 6
+
+void fspActionsInit(fspActionScheduler_t *s, uint32_t timeoutUs, uint32_t maxAheadTicks, uint32_t nominalPeriodUs)
+{
+    memset(s, 0, sizeof(*s));
+    s->timeoutUs = timeoutUs;
+    s->maxAheadTicks = maxAheadTicks;
+    s->periodNs = nominalPeriodUs * 1000U;
+    s->stats.pidPeriodNs = s->periodNs;
+}
 
 static fspActionResult_e reject(fspActionScheduler_t *s, fspActionResult_e reason)
 {
-    s->status.result = reason;
-    s->status.rejectedCount++;
-    if (reason == FSP_ACTION_LATE) s->status.lateCount++;
-    if (reason == FSP_ACTION_FULL) s->status.fullCount++;
+    if (reason == FSP_ACTION_LATE) {
+        s->stats.lateCount++;
+    } else if (reason == FSP_ACTION_FULL) {
+        s->stats.fullCount++;
+    } else {
+        s->stats.rejectedCount++;
+    }
     return reason;
 }
 
-fspActionResult_e fspActionsEnqueue(fspActionScheduler_t *s, const fspActionPacket_t *a)
+static bool valuesValid(const fspPacketAction_t *a)
 {
-    s->status.receivedSequence = a->sequence;
-    if (a->flags || a->reserved || (a->mode != FSP_ACTION_RATES && a->mode != FSP_ACTION_MOTORS))
-        return reject(s, FSP_ACTION_INVALID);
     for (unsigned i = 0; i < 4; i++) {
-        const int low = (a->mode == FSP_ACTION_RATES && i < 3) ? -20000 : 0;
-        const int high = (a->mode == FSP_ACTION_RATES && i < 3) ? 20000 : 10000;
-        if (a->values[i] < low || a->values[i] > high) return reject(s, FSP_ACTION_INVALID);
+        int low, high;
+        switch (a->mode) {
+        case FSP_ACTION_MODE_RC:
+            low = 1000; high = 2000;
+            break;
+        case FSP_ACTION_MODE_RATES:
+            low = i < 3 ? -20000 : 0; high = i < 3 ? 20000 : 10000;
+            break;
+        case FSP_ACTION_MODE_MOTORS:
+            low = 0; high = 10000;
+            break;
+        default:
+            return false;
+        }
+        if (a->values[i] < low || a->values[i] > high) {
+            return false;
+        }
     }
-    const int32_t ahead = (int32_t)(a->applyTick - s->status.pidTick);
-    if (ahead <= 0) return reject(s, FSP_ACTION_LATE);
-    if (ahead > (int32_t)FSP_ACTION_MAX_AHEAD_TICKS || (int32_t)(a->sourceTick - s->status.pidTick) > 0 ||
-        (int32_t)(a->applyTick - a->sourceTick) <= 0)
+    return true;
+}
+
+fspActionResult_e fspActionsEnqueue(fspActionScheduler_t *s, const fspPacketAction_t *a)
+{
+    if (a->reserved[0] || a->reserved[1] || a->reserved[2] || !valuesValid(a)) {
+        return reject(s, FSP_ACTION_INVALID);
+    }
+    const int32_t ahead = (int32_t)(a->applyTick - s->pidTick);
+    if (ahead <= 0) {
+        return reject(s, FSP_ACTION_LATE);
+    }
+    if ((uint32_t)ahead > s->maxAheadTicks) {
         return reject(s, FSP_ACTION_HORIZON);
-    if ((s->haveSequence && (int32_t)(a->sequence - s->lastSequence) <= 0) ||
-        (s->count && (int32_t)(a->applyTick - s->queue[(s->head + s->count - 1) % FSP_ACTION_QUEUE_CAPACITY].applyTick) <= 0))
-        return reject(s, FSP_ACTION_ORDER);
-    if (s->count == FSP_ACTION_QUEUE_CAPACITY) return reject(s, FSP_ACTION_FULL);
+    }
+    if (s->count) {
+        const fspPacketAction_t *last = &s->queue[(s->head + s->count - 1) % FSP_ACTION_QUEUE_CAPACITY];
+        if ((int32_t)(a->applyTick - last->applyTick) <= 0) {
+            return reject(s, FSP_ACTION_ORDER);
+        }
+    }
+    if (s->count == FSP_ACTION_QUEUE_CAPACITY) {
+        return reject(s, FSP_ACTION_FULL);
+    }
     s->queue[(s->head + s->count) % FSP_ACTION_QUEUE_CAPACITY] = *a;
     s->count++;
-    s->lastSequence = a->sequence;
-    s->haveSequence = true;
-    s->status.queueDepth = s->count;
-    s->status.result = FSP_ACTION_OK;
     return FSP_ACTION_OK;
+}
+
+static bool authorityAllows(uint8_t authority, uint8_t mode)
+{
+    if (!(authority & FSP_AUTHORITY_RC)) {
+        return false;
+    }
+    return mode == FSP_ACTION_MODE_RC || (authority & FSP_AUTHORITY_CONTROL);
 }
 
 bool fspActionsOutputActive(const fspActionScheduler_t *s)
 {
-    return s->authority && s->haveActive;
+    return s->haveActive && authorityAllows(s->authority, s->active.mode);
 }
 
-void fspActionsTick(fspActionScheduler_t *s, uint32_t nowUs, uint32_t periodUs, bool authority)
+static void trackPeriod(fspActionScheduler_t *s, uint32_t nowUs)
 {
-    s->status.pidTick++;
-    s->status.header.timestamp = nowUs;
-    s->status.pidPeriodUs = periodUs;
+    if (!s->haveTick) {
+        s->haveTick = true;
+        s->lastTickUs = nowUs;
+        return;
+    }
+    const uint64_t dtNs = (uint64_t)(nowUs - s->lastTickUs) * 1000U;
+    s->lastTickUs = nowUs;
+    if (2 * dtNs > 3ULL * s->periodNs) {
+        // Ticks the scheduler dropped between this and the previous tick
+        s->stats.skippedTicks += (uint32_t)((dtNs + s->periodNs / 2) / s->periodNs - 1);
+    } else {
+        s->periodNs = (uint32_t)((int32_t)s->periodNs + (((int32_t)dtNs - (int32_t)s->periodNs) >> FSP_PERIOD_EMA_SHIFT));
+    }
+    s->stats.pidPeriodNs = s->periodNs;
+}
+
+void fspActionsTick(fspActionScheduler_t *s, uint32_t nowUs, uint8_t authority)
+{
+    s->pidTick++;
+    trackPeriod(s, nowUs);
+
+    // Any authority change discards queued and active actions; the host has to start over.
     if (authority != s->authority) {
         s->head = s->count = 0;
-        s->haveActive = s->haveSequence = false;
-        s->status.result = FSP_ACTION_AUTHORITY_CHANGED;
-        s->status.mode = 0;
-        memset(s->status.values, 0, sizeof(s->status.values));
+        s->haveActive = false;
+        s->authority = authority;
     }
-    s->authority = authority;
+
+    s->activated = false;
     while (s->count) {
-        const fspActionPacket_t *a = &s->queue[s->head];
-        const int32_t due = (int32_t)(s->status.pidTick - a->applyTick);
-        if (due < 0) break;
+        const fspPacketAction_t *a = &s->queue[s->head];
+        const int32_t due = (int32_t)(s->pidTick - a->applyTick);
+        if (due < 0) {
+            break;
+        }
         if (due == 0) {
             s->active = *a;
             s->haveActive = true;
-            s->status.consumedSequence = a->sequence;
-            s->status.requestedTick = a->applyTick;
-            s->status.consumedTick = s->status.pidTick;
-            s->status.consumedTimeUs = nowUs;
-            s->status.mode = a->mode;
-            memcpy(s->status.values, a->values, sizeof(a->values));
-        } else reject(s, FSP_ACTION_LATE);
+            s->activated = true;
+            s->activeTimeUs = nowUs;
+        } else {
+            // Only possible after skipped ticks; never apply late
+            reject(s, FSP_ACTION_LATE);
+        }
         s->head = (s->head + 1) % FSP_ACTION_QUEUE_CAPACITY;
         s->count--;
     }
-    s->status.timedOut = s->haveActive && (uint32_t)(nowUs - s->status.consumedTimeUs) >= FSP_ACTION_TIMEOUT_US;
-    s->status.queueDepth = s->count;
-    s->status.authority = authority;
-    s->status.outputActive = fspActionsOutputActive(s);
+    s->timedOut = s->haveActive && (uint32_t)(nowUs - s->activeTimeUs) >= s->timeoutUs;
+}
+
+void fspActionsFrameState(const fspActionScheduler_t *s, fspSensorFrame_t *frame)
+{
+    const uint8_t mode = s->haveActive ? s->active.mode : FSP_ACTION_MODE_RATES;
+    frame->actionTick = s->haveActive ? s->active.applyTick : 0;
+    frame->actionMode = s->haveActive ? s->active.mode : 0;
+    frame->actionFlags = (authorityAllows(s->authority, mode) ? FSP_ACTION_FLAG_AUTHORITY : 0) |
+                         (fspActionsOutputActive(s) ? FSP_ACTION_FLAG_OUTPUT_ACTIVE : 0) |
+                         (s->timedOut ? FSP_ACTION_FLAG_TIMED_OUT : 0);
+    frame->queueDepth = s->count;
+    frame->reserved = 0;
 }

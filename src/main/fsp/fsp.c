@@ -30,10 +30,14 @@
 #include "sensors/battery.h"
 #include "sensors/esc_sensor_xr8pro.h"
 #include "sensors/gyro_init.h"
+#include "pg/fsp.h"
 
 #include "platform.h"
 
 #define FSP_MAX_PACKET_SIZE 255
+// COBS adds one code byte per 254 data bytes plus the delimiter
+#define FSP_COBS_ENCODED_SIZE(n) ((n) + (n) / 254 + 2)
+#define FSP_FRAME_SIZE(payloadSize) (sizeof(fspPacketHeader_t) + (payloadSize) + 1)
 #define FSP_SENSOR_FRAME_QUEUE_SIZE (FSP_SENSOR_FRAME_BATCH_COUNT + 3)
 
 #ifdef FSP_ENABLE_MAVLINK
@@ -46,7 +50,8 @@ typedef struct {
     bool telemetryEnabled;
     timeUs_t lastTelemetryRequestUs;
     fspCobsDecoder_t cobsDecoder;
-    // Buffers are aligned to 4 bytes to allow reinterpreting as fspFcRxPacket_t/fspFcTxPacket_t without copying
+    timeUs_t telemetryTimeoutUs;
+    // Buffers are aligned to 4 bytes so decoded frames can be read through the fsp_frame.h structs in place
     uint8_t inBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4)));  // +2 for COBS overhead
     uint8_t outBuf[FSP_MAX_PACKET_SIZE + 2] __attribute__((aligned(4))); // +2 for COBS overhead
 #ifdef FSP_PID_LOCKSTEP
@@ -67,7 +72,6 @@ typedef struct {
 
 static fspState_t fspState;
 static fspActionScheduler_t actions;
-static bool actionStatusDirty;
 #if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
 #include "fsp/fsp_imu_filter.h"
 static fspImuPt2Filter_t telemetryAcc, telemetryGyro;
@@ -88,14 +92,15 @@ void rxMspFrameReceive(const uint16_t *frame, int channelCount);
 void fspInit(void)
 {
     memset(&fspState, 0, sizeof(fspState_t));
-    fspActionsInit(&actions);
-    actionStatusDirty = true;
+    fspState.telemetryTimeoutUs = fspConfig()->telemetry_timeout_ms * 1000U;
+    fspActionsInit(&actions, fspConfig()->action_timeout_ms * 1000U, fspConfig()->action_max_ahead_ticks,
+                   targetPidLooptime);
 
 #ifdef FSP_PID_LOCKSTEP
     // Capture sample at every Nth PID loop iteration, N is chosen to capture the sample at
-    // the largest possible frequency <= FSP_PERIOD_HZ so the queue is certain to be consumed
+    // the largest possible frequency <= fsp_telemetry_hz so the queue is certain to be consumed
     // fast enough regardless of batching.
-    fspState.captureInterval = HZ_TO_INTERVAL_US(FSP_PERIOD_HZ) / gyro.targetLooptime + 1;
+    fspState.captureInterval = HZ_TO_INTERVAL_US(fspConfig()->telemetry_hz) / targetPidLooptime + 1;
 #endif
 
     const serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_FSP);
@@ -178,85 +183,118 @@ void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_
 }
 #endif
 
-static void fspSendFrames(timeUs_t currentTimeUs)
+// Frame, CRC and COBS-encode one packet; nothing is written unless it fits the TX buffer.
+static bool fspSendPacket(fspPacketType_e type, const void *payload, size_t payloadSize)
 {
-    fspFcTxPacket_t txPacket = {
-        .header =
-            {
-                .version = FSP_VERSION,
-                .timestamp = currentTimeUs,
-            },
-    };
-
-    // Copy sensor frames from queue to packet
-    for (size_t i = 0; i < FSP_SENSOR_FRAME_BATCH_COUNT; i++) {
-        txPacket.sensorFrames[i] = fspState.sensorFrameQueue[fspState.sensorFrameQueueTail];
-        fspState.sensorFrameQueueTail = (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
+    uint8_t frame[FSP_FRAME_SIZE(sizeof(fspPacketState_t))] __attribute__((aligned(4)));
+    if (FSP_FRAME_SIZE(payloadSize) > sizeof(frame)) {
+        return false;
     }
-
-#ifdef FSP_ENABLE_MAVLINK
-    // Tunnel recorded MAVLink messages from buffer
-    size_t mavlinkLen = fspMavlinkBufferRead(txPacket.mavlink.data, sizeof(txPacket.mavlink.data));
-    memset(txPacket.mavlink.data + mavlinkLen, 0, sizeof(txPacket.mavlink.data) - mavlinkLen);
-#endif
+    const fspPacketHeader_t header = {
+        .version = FSP_VERSION,
+        .packetType = type,
+        .timestamp = micros(),
+    };
+    memcpy(frame, &header, sizeof(header));
+    memcpy(frame + sizeof(header), payload, payloadSize);
+    const size_t crcOffset = sizeof(header) + payloadSize;
+    frame[crcOffset] = crc8_update(0xFF, frame, crcOffset, FSP_CRC_POLY);
 
     size_t encodedLength;
-    txPacket.crc = crc8_update(0xFF, &txPacket, sizeof(txPacket) - 1, FSP_CRC_POLY);
-    if (fspCobsEncode((uint8_t *)&txPacket, sizeof(txPacket), fspState.outBuf, sizeof(fspState.outBuf),
-                      &encodedLength)) {
-        serialWriteBuf(fspState.port, fspState.outBuf, encodedLength);
+    if (!fspCobsEncode(frame, crcOffset + 1, fspState.outBuf, sizeof(fspState.outBuf), &encodedLength) ||
+        serialTxBytesFree(fspState.port) < encodedLength) {
+        return false;
+    }
+    serialWriteBuf(fspState.port, fspState.outBuf, encodedLength);
+    return true;
+}
+
+static bool fspTxFits(size_t payloadSize)
+{
+    return serialTxBytesFree(fspState.port) >= FSP_COBS_ENCODED_SIZE(FSP_FRAME_SIZE(payloadSize));
+}
+
+static void fspSendState(void)
+{
+    fspPacketState_t state;
+    for (size_t i = 0; i < FSP_SENSOR_FRAME_BATCH_COUNT; i++) {
+        state.sensorFrames[i] = fspState.sensorFrameQueue[fspState.sensorFrameQueueTail];
+        fspState.sensorFrameQueueTail = (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
+    }
+    fspSendPacket(FSP_PACKET_TYPE_STATE, &state, sizeof(state));
+}
+
+#ifdef FSP_ENABLE_MAVLINK
+static void fspSendMavlink(void)
+{
+    if (fspState.mavlinkBufferHead == fspState.mavlinkBufferTail || !fspTxFits(sizeof(fspPacketMavlink_t))) {
+        return;
+    }
+    fspPacketMavlink_t mavlink;
+    const size_t length = fspMavlinkBufferRead(mavlink.data, sizeof(mavlink.data));
+    if (length) {
+        fspSendPacket(FSP_PACKET_TYPE_MAVLINK, &mavlink, length);
+    }
+}
+#endif
+
+static void fspRenewTelemetryLease(timeUs_t currentTimeUs)
+{
+    fspState.telemetryEnabled = true;
+    fspState.lastTelemetryRequestUs = currentTimeUs;
+}
+
+static void fspReceiveAction(const fspPacketAction_t *action, timeUs_t currentTimeUs)
+{
+    fspRenewTelemetryLease(currentTimeUs);
+    const fspPacketActionAck_t ack = {
+        .applyTick = action->applyTick,
+        .recvTick = actions.pidTick,
+        .result = fspActionsEnqueue(&actions, action),
+        .queueDepth = actions.count,
+    };
+    fspSendPacket(FSP_PACKET_TYPE_ACTION_ACK, &ack, sizeof(ack));
+}
+
+static void fspReceiveHeartbeat(timeUs_t currentTimeUs)
+{
+    fspRenewTelemetryLease(currentTimeUs);
+    fspSendPacket(FSP_PACKET_TYPE_STATS, &actions.stats, sizeof(actions.stats));
+}
+
+static void fspHandleFrame(const uint8_t *frame, size_t size, timeUs_t currentTimeUs)
+{
+    const fspPacketHeader_t *header = FSP_FRAME_HEADER(frame, size);
+    if (!header || header->version != FSP_VERSION ||
+        crc8_update(0xFF, frame, size - 1, FSP_CRC_POLY) != *FSP_FRAME_CRC(frame, size)) {
+        return;
+    }
+
+    switch (header->packetType) {
+    case FSP_PACKET_TYPE_HEARTBEAT:
+        if (FSP_FRAME_PAYLOAD_LENGTH(size) == 0) {
+            fspReceiveHeartbeat(currentTimeUs);
+        }
+        break;
+    case FSP_PACKET_TYPE_ACTION: {
+        const fspPacketAction_t *action = FSP_FRAME_PAYLOAD(frame, size, fspPacketAction_t);
+        if (action) {
+            fspReceiveAction(action, currentTimeUs);
+        }
+        break;
+    }
+    default:
+        break;
     }
 }
 
 static void fspReceiveFrames(timeUs_t currentTimeUs)
 {
-    UNUSED(currentTimeUs);
-
     for (unsigned budget = 0; budget < 128 && serialRxBytesWaiting(fspState.port); budget++) {
         const uint8_t c = serialRead(fspState.port);
         size_t decodedLength;
-        switch (fspCobsDecoderPush(&fspState.cobsDecoder, c, &decodedLength)) {
-        case FSP_COBS_DECODER_DONE:
-            if (decodedLength == sizeof(fspActionPacket_t)) {
-                fspReceiveAction((const fspActionPacket_t *)fspState.inBuf, currentTimeUs);
-                break;
-            }
-            if (decodedLength == sizeof(fspTelemetryHeartbeat_t)) {
-                const fspTelemetryHeartbeat_t *heartbeat = (const fspTelemetryHeartbeat_t *)fspState.inBuf;
-                if (heartbeat->header.version == FSP_VERSION &&
-                    heartbeat->magic == FSP_TELEMETRY_HEARTBEAT_MAGIC &&
-                    crc8_update(0xFF, heartbeat, sizeof(*heartbeat) - 1, FSP_CRC_POLY) == heartbeat->crc) {
-                    fspState.telemetryEnabled = true;
-                    fspState.lastTelemetryRequestUs = currentTimeUs;
-                    actionStatusDirty = true;
-                }
-                break;
-            }
-            if (decodedLength == sizeof(fspFcRxPacket_t)) {
-                fspFcRxPacket_t *rxPacket = (fspFcRxPacket_t *)fspState.inBuf;
-                uint8_t crc = crc8_update(0xFF, rxPacket, sizeof(*rxPacket) - 1, FSP_CRC_POLY);
-                if (crc != rxPacket->crc) {
-                    break;
-                }
-                if (rxPacket->header.version != FSP_VERSION) {
-                    break;
-                }
-
-                fspState.telemetryEnabled = true;
-                fspState.lastTelemetryRequestUs = currentTimeUs;
-                uint16_t frame[] = {
-                    [0] = rxPacket->rc.roll, [1] = rxPacket->rc.pitch, [2] = rxPacket->rc.throttle,
-                    [3] = rxPacket->rc.yaw,  [6] = rxPacket->rc.aux3,  [7] = rxPacket->rc.aux4,
-                };
-                rxMspFrameReceive(frame, ARRAYLEN(frame));
-            }
-            break;
-        case FSP_COBS_DECODER_ERROR_INVALID_INPUT:
-            break;
-        case FSP_COBS_DECODER_ERROR_BUFFER_OVERFLOW:
-            break;
-        case FSP_COBS_DECODER_IN_PROGRESS:
-            break;
+        if (fspCobsDecoderPush(&fspState.cobsDecoder, c, &decodedLength) == FSP_COBS_DECODER_DONE) {
+            fspHandleFrame(fspState.inBuf, decodedLength, currentTimeUs);
         }
     }
 }
@@ -268,17 +306,8 @@ void fspUpdate(timeUs_t currentTimeUs)
     }
 
     fspReceiveFrames(currentTimeUs);
-    if (fspState.telemetryEnabled && actionStatusDirty && serialTxBytesFree(fspState.port) >= sizeof(fspActionStatus_t) + 2) {
-        fspActionStatus_t status;
-        fspGetActionStatus(&status);
-        size_t size;
-        if (fspCobsEncode((const uint8_t *)&status, sizeof(status), fspState.outBuf, sizeof(fspState.outBuf), &size)) {
-            serialWriteBuf(fspState.port, fspState.outBuf, size);
-            actionStatusDirty = false;
-        }
-    }
     if (fspState.telemetryEnabled &&
-        cmpTimeUs(currentTimeUs, fspState.lastTelemetryRequestUs) >= (timeDelta_t)FSP_TELEMETRY_TIMEOUT_US) {
+        cmpTimeUs(currentTimeUs, fspState.lastTelemetryRequestUs) >= (timeDelta_t)fspState.telemetryTimeoutUs) {
         fspState.telemetryEnabled = false;
     }
     if (!fspState.telemetryEnabled) {
@@ -290,11 +319,12 @@ void fspUpdate(timeUs_t currentTimeUs)
     size_t framesAvailable =
         (fspState.sensorFrameQueueHead + FSP_SENSOR_FRAME_QUEUE_SIZE - fspState.sensorFrameQueueTail) %
         FSP_SENSOR_FRAME_QUEUE_SIZE;
-    if (framesAvailable >= FSP_SENSOR_FRAME_BATCH_COUNT &&
-        serialTxBytesFree(fspState.port) >= sizeof(fspFcTxPacket_t) + 2) {
-        fspSendFrames(currentTimeUs);
+    if (framesAvailable >= FSP_SENSOR_FRAME_BATCH_COUNT && fspTxFits(sizeof(fspPacketState_t))) {
+        fspSendState();
     }
-
+#ifdef FSP_ENABLE_MAVLINK
+    fspSendMavlink();
+#endif
 }
 
 #ifdef FSP_PID_LOCKSTEP
@@ -322,7 +352,7 @@ bool fspFrameDue(timeUs_t currentTimeUs)
 
     if (due) {
         // Schedule next capture time
-        const timeDelta_t targetDelta = 1000000 / FSP_PERIOD_HZ;
+        const timeDelta_t targetDelta = HZ_TO_INTERVAL_US(fspConfig()->telemetry_hz);
         fspState.nextCaptureTimeUs += targetDelta;
     }
 
@@ -352,7 +382,8 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     fspState.sensorFrameQueueHead = (fspState.sensorFrameQueueHead + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
 
     frame->timestamp = currentTimeUs;
-    frame->pidTick = actions.status.pidTick;
+    frame->pidTick = actions.pidTick;
+    fspActionsFrameState(&actions, frame);
 #if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
     frame->acc.x = lrintf(telemetryAcc.second[0]);
     frame->acc.y = lrintf(telemetryAcc.second[1]);
@@ -404,62 +435,59 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->batteryVoltage = getBatteryVoltage();
 }
 
-uint8_t fspReceiveAction(const fspActionPacket_t *action, timeUs_t receivedTimeUs)
-{
-    if (action->header.version != FSP_VERSION ||
-        crc8_update(0xFF, action, sizeof(*action) - 1, FSP_CRC_POLY) != action->crc)
-        return FSP_ACTION_INVALID;
-    fspState.telemetryEnabled = true;
-    fspState.lastTelemetryRequestUs = receivedTimeUs;
-    actionStatusDirty = true;
-    return fspActionsEnqueue(&actions, action);
-}
-
-void fspGetActionStatus(fspActionStatus_t *status)
-{
-    *status = actions.status;
-    status->header.version = FSP_VERSION;
-    status->crc = crc8_update(0xFF, status, sizeof(*status) - 1, FSP_CRC_POLY);
-}
-
 void fspActionPidTick(timeUs_t currentTimeUs)
 {
     // Both the FSP task and PID task execute on the cooperative scheduler.
-    const bool armed = ARMING_FLAG(ARMED);
     const bool selected = IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE);
-    const bool acro = !FLIGHT_MODE(ANGLE_MODE | HORIZON_MODE | GPS_RESCUE_MODE | ALT_HOLD_MODE | POS_HOLD_MODE);
     const bool healthy = !failsafeIsActive() && isRxReceivingSignal();
+    const bool armed = ARMING_FLAG(ARMED);
+    const bool acro = !FLIGHT_MODE(ANGLE_MODE | HORIZON_MODE | GPS_RESCUE_MODE | ALT_HOLD_MODE | POS_HOLD_MODE);
     const bool supported = !featureIsEnabled(FEATURE_3D) && getMotorCount() == 4 &&
         !isCrashFlipModeActive() && !isLaunchControlActive();
-    const uint32_t previous = actions.status.consumedTick;
-    const bool previousAuthority = actions.authority;
-    const bool previousTimeout = actions.status.timedOut;
-    fspActionsTick(&actions, currentTimeUs, targetPidLooptime, armed && selected && acro && healthy && supported);
-    actions.status.authorityFlags = armed | (selected << 1) | (acro << 2) | (healthy << 3) | (supported << 4);
-    if (previous != actions.status.consumedTick || previousAuthority != actions.authority ||
-        previousTimeout != actions.status.timedOut) actionStatusDirty = true;
+    const uint8_t authority = (selected && healthy ? FSP_AUTHORITY_RC : 0) |
+                              (armed && acro && supported ? FSP_AUTHORITY_CONTROL : 0);
+    fspActionsTick(&actions, currentTimeUs, authority);
+
+    // RC actions go through the MSP override on the tick they become active.
+    // Channels beyond throttle/yaw are not sent and stay with the radio.
+    if (actions.activated && actions.active.mode == FSP_ACTION_MODE_RC && fspActionsOutputActive(&actions)) {
+        const uint16_t frame[] = {
+            [0] = actions.active.values[0], // roll
+            [1] = actions.active.values[1], // pitch
+            [2] = actions.active.values[3], // throttle
+            [3] = actions.active.values[2], // yaw
+        };
+        rxMspFrameReceive(frame, ARRAYLEN(frame));
+    }
+}
+
+static bool fspActionModeActive(fspActionMode_e mode)
+{
+    return fspActionsOutputActive(&actions) && actions.active.mode == mode;
 }
 
 bool fspActionRateSetpoint(unsigned axis, float *rate)
 {
-    if (!fspActionsOutputActive(&actions) || actions.active.mode != FSP_ACTION_RATES || axis >= 3) return false;
-    *rate = actions.status.timedOut ? 0.0f : actions.active.values[axis] * 0.1f;
+    if (!fspActionModeActive(FSP_ACTION_MODE_RATES) || axis >= 3) return false;
+    *rate = actions.timedOut ? 0.0f : actions.active.values[axis] * 0.1f;
     return true;
 }
 
 bool fspActionCollective(float *collective)
 {
-    if (!fspActionsOutputActive(&actions) || actions.active.mode != FSP_ACTION_RATES) return false;
-    *collective = actions.status.timedOut ? 0.0f : actions.active.values[3] * 0.0001f;
+    if (!fspActionModeActive(FSP_ACTION_MODE_RATES)) return false;
+    *collective = actions.timedOut ? 0.0f : actions.active.values[3] * 0.0001f;
     return true;
 }
 
 bool fspActionMotorOutputs(float *outputs, unsigned count)
 {
-    if (!fspActionsOutputActive(&actions) || count != 4) return false;
-    if (!actions.status.timedOut && actions.active.mode != FSP_ACTION_MOTORS) return false;
+    if (count != 4) return false;
+    const bool motors = fspActionModeActive(FSP_ACTION_MODE_MOTORS);
+    // A timed-out rate action also stops the motors
+    if (!motors && !(actions.timedOut && fspActionModeActive(FSP_ACTION_MODE_RATES))) return false;
     for (unsigned i = 0; i < 4; i++) {
-        const float value = actions.status.timedOut ? 0.0f : actions.active.values[i] * 0.0001f;
+        const float value = actions.timedOut ? 0.0f : actions.active.values[i] * 0.0001f;
         outputs[i] = value == 0.0f ? motorConvertFromExternal(1000) :
             getMotorOutputLow() + value * (getMotorOutputHigh() - getMotorOutputLow());
     }
@@ -467,15 +495,8 @@ bool fspActionMotorOutputs(float *outputs, unsigned count)
     return true;
 }
 
-void fspActionMotorWritten(timeUs_t currentTimeUs)
-{
-    if (actions.status.consumedTick != actions.status.pidTick) return;
-    actions.status.motorWriteTimeUs = currentTimeUs;
-    for (unsigned i = 0; i < 4; i++) actions.status.motors[i] = motorConvertToExternal(motor[i]);
-}
-
 bool fspActionBypassPid(void)
 {
-    return fspActionsOutputActive(&actions) &&
-        (actions.active.mode == FSP_ACTION_MOTORS || actions.status.timedOut);
+    return fspActionModeActive(FSP_ACTION_MODE_MOTORS) ||
+        (actions.timedOut && fspActionModeActive(FSP_ACTION_MODE_RATES));
 }

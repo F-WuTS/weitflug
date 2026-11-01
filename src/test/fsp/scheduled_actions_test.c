@@ -2,75 +2,166 @@
 #include <assert.h>
 #include <stdio.h>
 
-static fspActionPacket_t action(uint32_t sequence, uint32_t source, uint32_t target, uint8_t mode)
+#define PERIOD_US 500U
+#define TIMEOUT_US 200000U
+#define MAX_AHEAD 128U
+#define ALL (FSP_AUTHORITY_RC | FSP_AUTHORITY_CONTROL)
+
+static fspPacketAction_t action(uint32_t applyTick, uint8_t mode)
 {
-    fspActionPacket_t a = {0};
-    a.sequence = sequence; a.sourceTick = source; a.applyTick = target; a.mode = mode;
-    a.values[0] = 1000; a.values[1] = 2000; a.values[2] = 3000; a.values[3] = 4000;
+    fspPacketAction_t a = {0};
+    a.applyTick = applyTick;
+    a.mode = mode;
+    for (unsigned i = 0; i < 4; i++) {
+        a.values[i] = mode == FSP_ACTION_MODE_RC ? 1500 : 1000 * (i + 1);
+    }
     return a;
 }
-int main(void)
+
+// Tick at the nominal period: tick n happens at n * PERIOD_US
+static void tickAt(fspActionScheduler_t *s, uint32_t tick, uint8_t authority)
+{
+    fspActionsTick(s, tick * PERIOD_US, authority);
+    assert(s->pidTick == tick);
+}
+
+static void testQueueAndValidation(void)
 {
     fspActionScheduler_t s;
-    fspActionsInit(&s);
-    fspActionsTick(&s, 500, 500, false);
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    tickAt(&s, 1, 0);
     for (uint32_t i = 1; i <= 4; i++) {
-        fspActionPacket_t a = action(i, 1, 2+i, FSP_ACTION_MOTORS);
+        fspPacketAction_t a = action(2 + i, FSP_ACTION_MODE_MOTORS);
         assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
     }
-    fspActionPacket_t a = action(5, 1, 7, FSP_ACTION_MOTORS);
+    fspPacketAction_t a = action(7, FSP_ACTION_MODE_MOTORS);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_FULL);
+
+    // Applied exactly on their tick, in order; no authority so no outputs
     for (uint32_t tick = 2; tick <= 6; tick++) {
-        fspActionsTick(&s, tick * 500, 500, false);
+        tickAt(&s, tick, 0);
         assert(!fspActionsOutputActive(&s));
-        if (tick >= 3) {
-            assert(s.status.consumedSequence == tick - 2);
-            assert(s.status.consumedTick == tick && s.status.requestedTick == tick);
-            assert(s.status.consumedTimeUs == tick * 500);
-        }
+        assert(s.activated == (tick >= 3));
+        if (tick >= 3) assert(s.active.applyTick == tick && s.activeTimeUs == tick * PERIOD_US);
     }
     assert(s.count == 0);
-    a = action(6, 1, 6, FSP_ACTION_RATES);
+
+    a = action(6, FSP_ACTION_MODE_RATES);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_LATE);
-    a.applyTick = 7; a.sequence = 4;
-    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_ORDER);
-    a.sequence = 6; a.applyTick = 1000;
+    a.applyTick = 6 + MAX_AHEAD + 1;
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_HORIZON);
-    a.applyTick = 8; a.values[3] = -1;
+    a.applyTick = 6 + MAX_AHEAD;
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
+    a.applyTick = 8;
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_ORDER);
+
+    // Value ranges and mode/reserved validation
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    a = action(5, FSP_ACTION_MODE_RATES); a.values[3] = -1;
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
-    a.values[3] = 5000;
+    a = action(5, FSP_ACTION_MODE_RATES); a.values[0] = -20000;
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
-    fspActionsTick(&s, 3500, 500, true);
-    assert(!s.haveActive && s.count == 0); // transition clears disarmed rehearsal
-    a = action(7, 7, 9, FSP_ACTION_RATES);
+    a = action(6, FSP_ACTION_MODE_MOTORS); a.values[1] = 10001;
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
+    a = action(6, FSP_ACTION_MODE_RC); a.values[2] = 999;
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
+    a = action(6, 0);
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
+    a = action(6, FSP_ACTION_MODE_RC); a.reserved[2] = 1;
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
+
+    // Counters are disjoint
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    a = action(0, FSP_ACTION_MODE_RC);
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_LATE);
+    a = action(1, 0);
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
+    assert(s.stats.lateCount == 1 && s.stats.rejectedCount == 1 && s.stats.fullCount == 0);
+}
+
+static void testAuthorityAndTimeout(void)
+{
+    fspActionScheduler_t s;
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    tickAt(&s, 1, 0);
+    fspPacketAction_t a = action(3, FSP_ACTION_MODE_RATES);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
-    fspActionsTick(&s, 4000, 500, true);
+    tickAt(&s, 2, ALL);
+    assert(s.count == 0); // authority change flushes the queue
+
+    a = action(4, FSP_ACTION_MODE_RATES);
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
+    tickAt(&s, 3, ALL);
     assert(!fspActionsOutputActive(&s));
-    fspActionsTick(&s, 4500, 500, true);
-    assert(fspActionsOutputActive(&s) && !s.status.timedOut);
-    fspActionsTick(&s, 204499, 500, true);
-    assert(!s.status.timedOut);
-    fspActionsTick(&s, 204500, 500, true);
-    assert(s.status.timedOut);
-    fspActionsTick(&s, 205000, 500, false);
-    assert(!fspActionsOutputActive(&s));
-    // Wrap both FC tick/time counters and action sequence numbers.
-    fspActionsInit(&s);
-    s.status.pidTick = UINT32_MAX - 2;
-    a = action(UINT32_MAX, s.status.pidTick, 0, FSP_ACTION_MOTORS);
+    tickAt(&s, 4, ALL);
+    assert(fspActionsOutputActive(&s) && !s.timedOut);
+    fspActionsTick(&s, 4 * PERIOD_US + TIMEOUT_US - 1, ALL);
+    assert(!s.timedOut);
+    fspActionsTick(&s, 4 * PERIOD_US + TIMEOUT_US, ALL);
+    assert(s.timedOut);
+
+    // Losing control authority drops rates; RC authority alone only allows RC actions
+    fspActionsTick(&s, 4 * PERIOD_US + TIMEOUT_US + PERIOD_US, FSP_AUTHORITY_RC);
+    assert(!s.haveActive && !fspActionsOutputActive(&s));
+    a = action(s.pidTick + 1, FSP_ACTION_MODE_RATES);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
-    for (int i = 0; i < 3; i++) fspActionsTick(&s, UINT32_MAX - 499 + i * 500U, 500, false);
-    assert(s.status.consumedTick == 0 && s.status.consumedSequence == UINT32_MAX);
-    a = action(0, 0, 2, FSP_ACTION_RATES);
+    fspActionsTick(&s, s.lastTickUs + PERIOD_US, FSP_AUTHORITY_RC);
+    assert(s.haveActive && !fspActionsOutputActive(&s));
+    a = action(s.pidTick + 1, FSP_ACTION_MODE_RC);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
-    fspActionsTick(&s, 1500, 500, false);
-    fspActionsTick(&s, 2000, 500, false);
-    assert(s.status.consumedSequence == 0 && s.status.mode == FSP_ACTION_RATES);
-    // A skipped target is discarded instead of being applied late.
-    a = action(1, 2, 4, FSP_ACTION_MOTORS);
+    fspActionsTick(&s, s.lastTickUs + PERIOD_US, FSP_AUTHORITY_RC);
+    assert(fspActionsOutputActive(&s));
+
+    // Sensor frame state mirrors the active action
+    fspSensorFrame_t frame = {0};
+    fspActionsFrameState(&s, &frame);
+    assert(frame.actionTick == s.pidTick && frame.actionMode == FSP_ACTION_MODE_RC);
+    assert(frame.actionFlags == (FSP_ACTION_FLAG_AUTHORITY | FSP_ACTION_FLAG_OUTPUT_ACTIVE));
+    assert(frame.queueDepth == 0);
+}
+
+static void testWrapAndLate(void)
+{
+    fspActionScheduler_t s;
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    s.pidTick = UINT32_MAX - 2;
+    fspPacketAction_t a = action(0, FSP_ACTION_MODE_MOTORS);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
-    s.status.pidTick = 4;
-    fspActionsTick(&s, 2500, 500, false);
-    assert(s.status.lateCount == 1 && s.status.consumedSequence == 0);
-    puts("scheduled actions: FIFO/deadline/order/overflow/authority/timeout/counter wrap passed");
+    for (int i = 0; i < 3; i++) fspActionsTick(&s, UINT32_MAX - 999 + i * PERIOD_US, 0);
+    assert(s.pidTick == 0 && s.activated && s.active.applyTick == 0);
+
+    // A target skipped by the scheduler is discarded, never applied late
+    a = action(3, FSP_ACTION_MODE_MOTORS);
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
+    s.pidTick = 3;
+    fspActionsTick(&s, s.lastTickUs + PERIOD_US, 0);
+    assert(s.stats.lateCount == 1 && s.active.applyTick == 0);
+}
+
+static void testPeriodAndSkips(void)
+{
+    fspActionScheduler_t s;
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    // Real loop runs 1% slow: 505 us; EMA converges towards 505000 ns
+    uint32_t now = 0;
+    for (int i = 0; i < 1000; i++) fspActionsTick(&s, now += 505, 0);
+    assert(s.stats.pidPeriodNs > 504000 && s.stats.pidPeriodNs <= 505000);
+    assert(s.stats.skippedTicks == 0);
+    // Gap of 3 periods = 2 ticks lost; the period estimate is not disturbed
+    const uint32_t period = s.stats.pidPeriodNs;
+    fspActionsTick(&s, now += 3 * 505, 0);
+    assert(s.stats.skippedTicks == 2 && s.stats.pidPeriodNs == period);
+    // Survives micros() wrap
+    s.lastTickUs = UINT32_MAX - 100;
+    fspActionsTick(&s, UINT32_MAX - 100 + 505, 0);
+    assert(s.stats.skippedTicks == 2);
+}
+
+int main(void)
+{
+    testQueueAndValidation();
+    testAuthorityAndTimeout();
+    testWrapAndLate();
+    testPeriodAndSkips();
+    puts("scheduled actions: queue/validation/authority/timeout/wrap/late/period/skips passed");
 }

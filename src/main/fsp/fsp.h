@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "common/time.h"
 
 #pragma GCC diagnostic push
@@ -19,11 +21,8 @@ void fspImuAccelerometerUpdate(const float values[3], unsigned rateHz, timeUs_t 
 void fspImuGyroscopeUpdate(const float values[3], unsigned rateHz, timeUs_t timestampUs);
 #endif
 
-#include "fsp_frame.h"
+// Scheduled actions, called from the PID loop
 void fspActionPidTick(timeUs_t currentTimeUs);
-void fspActionMotorWritten(timeUs_t currentTimeUs);
-uint8_t fspReceiveAction(const fspActionPacket_t *action, timeUs_t receivedTimeUs);
-void fspGetActionStatus(fspActionStatus_t *status);
 bool fspActionRateSetpoint(unsigned axis, float *rate);
 bool fspActionCollective(float *collective);
 bool fspActionMotorOutputs(float *outputs, unsigned count);

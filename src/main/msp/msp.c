@@ -27,9 +27,6 @@
 #include <ctype.h>
 
 #include "platform.h"
-#ifdef USE_FSP
-#include "fsp/fsp.h"
-#endif
 
 #include "blackbox/blackbox.h"
 #include "blackbox/blackbox_io.h"
@@ -632,14 +629,6 @@ static bool mspCommonProcessOutCommand(int16_t cmdMSP, sbuf_t *dst, mspPostProce
     UNUSED(mspPostProcessFn);
 
     switch (cmdMSP) {
-#ifdef USE_FSP
-    case MSP2_FSP_ACTION_STATUS: {
-        fspActionStatus_t status;
-        fspGetActionStatus(&status);
-        sbufWriteData(dst, &status, sizeof(status));
-        break;
-    }
-#endif
     case MSP_API_VERSION:
         sbufWriteU8(dst, MSP_PROTOCOL_VERSION);
         sbufWriteU8(dst, API_VERSION_MAJOR);
@@ -2338,15 +2327,6 @@ static mspResult_e mspFcProcessOutCommandWithArg(mspDescriptor_t srcDesc, int16_
 {
 
     switch (cmdMSP) {
-#ifdef USE_FSP
-    case MSP2_FSP_ACTION: {
-        if (sbufBytesRemaining(src) != sizeof(fspActionPacket_t)) return MSP_RESULT_ERROR;
-        fspActionPacket_t action;
-        sbufReadData(src, &action, sizeof(action));
-        sbufWriteU8(dst, fspReceiveAction(&action, micros()));
-        break;
-    }
-#endif
     case MSP_BOXNAMES:
         {
             const int page = sbufBytesRemaining(src) ? sbufReadU8(src) : 0;
