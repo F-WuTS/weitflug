@@ -22,7 +22,7 @@ extern "C" {
 #define FSP_IS_MAVLINK_ENABLED(v) (((v) & MAVLINK_FLAG_MASK) != 0)
 
 // actual FSP version number
-#define FSP_RAW_VERSION_NUM 0x05
+#define FSP_RAW_VERSION_NUM 0x06
 
 #ifdef FSP_ENABLE_MAVLINK
 #ifndef FSP_MAVLINK_TUNNEL_SIZE
@@ -62,6 +62,7 @@ typedef struct {
 
 typedef struct {
     uint32_t timestamp;
+    uint32_t pidTick;
     fspVec_t acc;
     int16_t acc1G;
     float gyroDpsLsb;
@@ -113,3 +114,60 @@ typedef struct {
 } fspTelemetryHeartbeat_t;
 static_assert(sizeof(fspTelemetryHeartbeat_t) == 12, "heartbeat wire size");
 static_assert(offsetof(fspTelemetryHeartbeat_t, crc) == 11, "heartbeat CRC offset");
+
+#define FSP_ACTION_RATES 1U
+#define FSP_ACTION_MOTORS 2U
+#define FSP_ACTION_QUEUE_CAPACITY 4U
+#define FSP_ACTION_TIMEOUT_US 200000U
+#define FSP_ACTION_MAX_AHEAD_TICKS 128U
+#define MSP2_FSP_ACTION 0x3F00
+#define MSP2_FSP_ACTION_STATUS 0x3F01
+
+// Rates: roll/pitch/yaw in 0.1 deg/s, collective in 0..10000.
+// Motors: BF motor indices 0..3, each in 0..10000.
+typedef struct {
+    fspPacketHeader_t header;
+    uint32_t sequence;
+    uint32_t sourceTick;
+    uint32_t applyTick;
+    int16_t values[4];
+    uint8_t mode;
+    uint8_t flags;
+    uint8_t reserved;
+    uint8_t crc;
+} fspActionPacket_t;
+
+typedef enum {
+    FSP_ACTION_OK = 0, FSP_ACTION_INVALID = 1, FSP_ACTION_LATE = 2,
+    FSP_ACTION_FULL = 3, FSP_ACTION_ORDER = 4, FSP_ACTION_HORIZON = 5,
+    FSP_ACTION_AUTHORITY_CHANGED = 6,
+} fspActionResult_e;
+
+typedef struct {
+    fspPacketHeader_t header;
+    uint32_t pidTick;
+    uint32_t pidPeriodUs;
+    uint32_t receivedSequence;
+    uint32_t consumedSequence;
+    uint32_t requestedTick;
+    uint32_t consumedTick;
+    uint32_t consumedTimeUs;
+    uint32_t motorWriteTimeUs;
+    uint32_t lateCount;
+    uint32_t fullCount;
+    uint32_t rejectedCount;
+    int16_t values[4];
+    uint16_t motors[4]; // normalized external outputs: 1000..2000
+    uint8_t queueDepth;
+    uint8_t mode;
+    uint8_t result;
+    uint8_t authority;
+    uint8_t outputActive;
+    uint8_t timedOut;
+    uint8_t authorityFlags; // armed, override, Acro, radio healthy, supported (bits 0..4)
+    uint8_t crc;
+} fspActionStatus_t;
+static_assert(sizeof(fspActionPacket_t) == 32, "action wire size");
+static_assert(offsetof(fspActionPacket_t, crc) == 31, "action CRC offset");
+static_assert(sizeof(fspActionStatus_t) == 76, "action status wire size");
+static_assert(offsetof(fspActionStatus_t, crc) == 75, "action status CRC offset");

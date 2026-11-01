@@ -23,6 +23,9 @@
 #include <float.h>
 
 #include "platform.h"
+#ifdef USE_FSP
+#include "fsp/fsp.h"
+#endif
 
 #include "build/debug.h"
 
@@ -683,11 +686,17 @@ static void applyMixerAdjustment(float *motorMix, const float motorMixMin, const
 
 FAST_CODE_NOINLINE void mixTable(timeUs_t currentTimeUs)
 {
+#ifdef USE_FSP
+    if (fspActionMotorOutputs(motor, mixerRuntime.motorCount)) return;
+#endif
     const bool launchControlActive = isLaunchControlActive();
     const bool airmodeEnabled = isAirmodeEnabled() || launchControlActive;
 
     // Find min and max throttle based on conditions. Throttle has to be known before mixing
     calculateThrottleAndCurrentMotorEndpoints(currentTimeUs);
+#ifdef USE_FSP
+    const bool scheduledCollective = fspActionCollective(&throttle);
+#endif
 
     if (applyCrashFlipModeToMotors()) {
         return;
@@ -839,7 +848,11 @@ FAST_CODE_NOINLINE void mixTable(timeUs_t currentTimeUs)
         break;
     }
 
-    if (featureIsEnabled(FEATURE_MOTOR_STOP)
+    if (
+#ifdef USE_FSP
+        !scheduledCollective &&
+#endif
+        featureIsEnabled(FEATURE_MOTOR_STOP)
         && ARMING_FLAG(ARMED)
         && !mixerRuntime.feature3dEnabled
         && !airmodeEnabled

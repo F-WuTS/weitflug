@@ -25,6 +25,9 @@
 #include <math.h>
 
 #include "platform.h"
+#ifdef USE_FSP
+#include "fsp/fsp.h"
+#endif
 
 #include "build/build_config.h"
 #include "build/debug.h"
@@ -1317,6 +1320,9 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
 #ifdef USE_CHIRP
         currentPidSetpoint += currentChirp;
 #endif // USE_CHIRP
+#ifdef USE_FSP
+        const bool scheduledRate = fspActionRateSetpoint(axis, &currentPidSetpoint);
+#endif
         float errorRate = currentPidSetpoint - gyroRate; // r - y
 #if defined(USE_ACC)
         handleCrashRecovery(
@@ -1399,6 +1405,9 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
             // the axis is operating as a normal acro axis, so use normal feedforard from rc.c
             pidSetpointDelta = getFeedforward(axis);
         }
+#endif
+#ifdef USE_FSP
+        if (scheduledRate) pidSetpointDelta = 0.0f;
 #endif
         pidRuntime.previousPidSetpoint[axis] = currentPidSetpoint; // this is the value sent to blackbox, and used for D-max setpoint
 

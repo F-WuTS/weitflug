@@ -43,7 +43,8 @@ are disabled by removing their definition, rather than setting them to zero.
 
 ## Telemetry and timing
 
-A valid heartbeat or RC packet starts telemetry and renews its **500 ms lease**.
+A valid heartbeat, RC packet or scheduled action starts telemetry and renews
+its **500 ms lease**.
 The heartbeat carries magic `0x54534C` (little-endian bytes `4c 53 54`). Send it
 periodically for telemetry-only operation. Lease expiry stops transmission and
 clears queued samples. RC command freshness has its own 200 ms timer.
@@ -60,20 +61,62 @@ the header, PID snapshot time in each sample. Hosts handle clock mapping.
 
 Packets use little-endian C layouts, COBS and a `0x00` delimiter. CRC-8 uses
 polynomial `0xD5`, seed `0xFF`, over bytes preceding the final CRC. Reserved
-fields are zero. Version must match: `0x05`, or `0x85` with MAVLink.
+fields are zero. Version must match: `0x06`, or `0x86` with MAVLink.
 
 | Packet | Decoded size |
 | --- | ---: |
 | Heartbeat | 12 bytes |
 | RC command | 24 bytes |
-| Telemetry: two sensor frames | 116 bytes |
-| Telemetry with 64-byte MAVLink tunnel | 180 bytes |
+| Telemetry: two sensor frames | 124 bytes |
+| Telemetry with 64-byte MAVLink tunnel | 188 bytes |
+| Scheduled action | 32 bytes |
+| Action status | 76 bytes |
 
-Each 52-byte sensor frame carries timestamp, acceleration, gyro, WXYZ attitude,
+Each 56-byte sensor frame carries timestamp, PID tick, acceleration, gyro, WXYZ attitude,
 RC channels, four RPM values and voltage. Scale acceleration by `1 / acc1G`,
 gyro by `gyroDpsLsb`, quaternion by `1 / 32768`, voltage by `0.01 V`.
 RC telemetry reflects receiver-selected `rcData`. See `fsp_frame.h` for offsets
 and field types; the packet buffer limit is 255 decoded bytes.
+
+## Scheduled actions
+
+FSP v6 actions carry a sequence, source PID tick, target PID tick and four
+signed 16-bit values. Mode 1 uses roll/pitch/yaw in 0.1 deg/s and collective
+in 0..10000. Mode 2 uses motor indices 0..3 in 0..10000: zero stops the motor;
+positive values map to the configured low/high output endpoints.
+
+The four-entry FIFO accepts increasing sequences and target ticks, at most
+128 ticks ahead. The PID task consumes an action only on its target tick;
+late, full-queue, out-of-order and invalid actions return explicit rejection
+codes. Target `sourceTick + N` gives a fixed N-iteration state-to-action delay.
+Use the measured tick duration, since nominal PID period and gyro rate differ.
+
+Rates enter before rate-error calculation, with radio feedforward excluded;
+collective uses the normal mixer. Direct motor mode bypasses PID/mixing.
+Outputs require arming, physical MSP override, Acro, healthy radio, four motors
+and non-3D/non-launch/non-crash-flip configuration. Authority changes flush
+pending and active actions. Hold the last action between updates; after 200 ms
+without consumption the scheduled path outputs motor-stop values.
+
+Disarmed actions rehearse timing while keeping normal disarmed outputs. Status
+reports received/consumed sequence, requested/consumed tick, FC timestamp,
+software motor-write time, values, external motor outputs, queue depth,
+rejection counters, authority flags and timeout. Status snapshots may coalesce
+when actions arrive faster than the telemetry task; this is not a per-tick log.
+Authority flag bits 0..4 mean armed, override, Acro, radio healthy and supported
+configuration. Physical ESC/motor delay is separate from the software write time.
+
+USB MSPv2 `0x3F00` accepts the same complete action packet and returns a rejection
+code; `0x3F01` returns the CRC-protected status packet. UART status is emitted on
+commands, consumption, authority/timeout changes and heartbeat requests.
+
+Host tests for the allocation-free scheduler:
+
+```sh
+cc -std=gnu11 -Wall -Wextra -Werror -Isrc/main \
+  src/test/fsp/scheduled_actions_test.c src/main/fsp/fsp_actions.c \
+  -o /tmp/fsp-actions-test && /tmp/fsp-actions-test
+```
 
 ## RC override
 

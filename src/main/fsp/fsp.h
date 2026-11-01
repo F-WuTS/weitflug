@@ -18,3 +18,13 @@ void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_
 void fspImuAccelerometerUpdate(const float values[3], unsigned rateHz, timeUs_t timestampUs);
 void fspImuGyroscopeUpdate(const float values[3], unsigned rateHz, timeUs_t timestampUs);
 #endif
+
+#include "fsp_frame.h"
+void fspActionPidTick(timeUs_t currentTimeUs);
+void fspActionMotorWritten(timeUs_t currentTimeUs);
+uint8_t fspReceiveAction(const fspActionPacket_t *action, timeUs_t receivedTimeUs);
+void fspGetActionStatus(fspActionStatus_t *status);
+bool fspActionRateSetpoint(unsigned axis, float *rate);
+bool fspActionCollective(float *collective);
+bool fspActionMotorOutputs(float *outputs, unsigned count);
+bool fspActionBypassPid(void);

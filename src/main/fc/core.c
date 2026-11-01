@@ -1316,6 +1316,9 @@ static FAST_CODE void subTaskMotorUpdate(timeUs_t currentTimeUs)
 #endif
 
     writeMotors();
+#ifdef USE_FSP
+    fspActionMotorWritten(micros());
+#endif
 
 #ifdef USE_DSHOT_TELEMETRY_STATS
     if (debugMode == DEBUG_DSHOT_RPM_ERRORS && useDshotTelemetry) {
@@ -1402,7 +1405,13 @@ FAST_CODE void taskMainPidLoop(timeUs_t currentTimeUs)
     // 3 - subTaskPidSubprocesses()
     DEBUG_SET(DEBUG_PIDLOOP, 0, micros() - currentTimeUs);
 
+#ifdef USE_FSP
+    fspActionPidTick(currentTimeUs);
+#endif
     subTaskRcCommand(currentTimeUs);
+#ifdef USE_FSP
+    if (!fspActionBypassPid())
+#endif
     subTaskPidController(currentTimeUs);
     subTaskMotorUpdate(currentTimeUs);
     subTaskPidSubprocesses(currentTimeUs);
