@@ -20,9 +20,13 @@
 #include "common/time.h"
 #include "common/utils.h"
 #include "drivers/dshot.h"
+#include "drivers/dshot_command.h"
+#include "drivers/io.h"
+#include "drivers/pinio.h"
 #include "drivers/serial.h"
 #include "fc/rc_controls.h"
 #include "flight/imu.h"
+#include "io/beeper.h"
 #include "io/serial.h"
 #include "msp/msp.h"
 #include "rx/rx.h"
@@ -31,6 +35,7 @@
 #include "sensors/esc_sensor_xr8pro.h"
 #include "sensors/gyro_init.h"
 #include "pg/fsp.h"
+#include "pg/pinio.h"
 
 #include "platform.h"
 
@@ -262,6 +267,85 @@ static void fspReceiveHeartbeat(timeUs_t currentTimeUs)
     fspSendPacket(FSP_PACKET_TYPE_STATS, &actions.stats, sizeof(actions.stats));
 }
 
+#ifdef USE_PINIO
+static fspCommandResult_e fspApplyPinioCommand(const fspPacketCommand_t *command)
+{
+    if (command->arg1 > 1 || command->arg0 >= PINIO_COUNT) {
+        return FSP_COMMAND_INVALID;
+    }
+    // pinioInit() only keeps pins that resolve to an IO record
+    if (!IOGetByTag(pinioConfig()->ioTag[command->arg0])) {
+        return FSP_COMMAND_UNAVAILABLE;
+    }
+    pinioSet(command->arg0, command->arg1);
+    return FSP_COMMAND_OK;
+}
+#endif
+
+#ifdef USE_DSHOT
+// FSP's own beacon clock; io/beeper.c keeps a separate one for the ESC beacons
+static timeUs_t lastDshotBeaconUs;
+
+static fspCommandResult_e fspApplyDshotCommand(const fspPacketCommand_t *command, timeUs_t currentTimeUs)
+{
+    // Only the beacon tones are exposed
+    if (command->arg0 < DSHOT_CMD_BEACON1 || command->arg0 > DSHOT_CMD_BEACON5) {
+        return FSP_COMMAND_INVALID;
+    }
+    if (command->arg1 != ALL_MOTORS && command->arg1 >= getMotorCount()) {
+        return FSP_COMMAND_INVALID;
+    }
+    // Beacons would collide with the spin direction commands sent around arming and disarming
+    if (ARMING_FLAG(ARMED) || areMotorsRunning() || isTryingToArm() ||
+        cmpTimeUs(currentTimeUs, getLastDisarmTimeUs()) < DSHOT_BEACON_GUARD_DELAY_US) {
+        return FSP_COMMAND_DENIED;
+    }
+    // Inline commands need the motors enabled and the protocol detection delay to have passed
+    if (!isMotorProtocolDshot() || !dshotStreamingCommandsAreEnabled()) {
+        return FSP_COMMAND_UNAVAILABLE;
+    }
+    if (!dshotCommandQueueEmpty() || cmpTimeUs(currentTimeUs, lastDshotBeaconUs) < DSHOT_BEACON_MODE_INTERVAL_US ||
+        cmpTimeUs(currentTimeUs, getLastDshotBeaconCommandTimeUs()) < DSHOT_BEACON_MODE_INTERVAL_US) {
+        return FSP_COMMAND_BUSY;
+    }
+    lastDshotBeaconUs = currentTimeUs;
+    dshotCommandWrite(command->arg1, getMotorCount(), command->arg0, DSHOT_CMD_TYPE_INLINE);
+    return FSP_COMMAND_OK;
+}
+#endif
+
+// Unlike actions, commands need no target tick or control authority and are applied on receipt.
+static void fspReceiveCommand(const fspPacketCommand_t *command, timeUs_t currentTimeUs)
+{
+    fspRenewTelemetryLease(currentTimeUs);
+
+    fspCommandResult_e result = FSP_COMMAND_INVALID;
+    if (!command->reserved) {
+        switch (command->type) {
+#ifdef USE_PINIO
+        case FSP_COMMAND_TYPE_PINIO:
+            result = fspApplyPinioCommand(command);
+            break;
+#endif
+#ifdef USE_DSHOT
+        case FSP_COMMAND_TYPE_DSHOT:
+            result = fspApplyDshotCommand(command, currentTimeUs);
+            break;
+#endif
+        default:
+            break;
+        }
+    }
+
+    const fspPacketCommandAck_t ack = {
+        .type = command->type,
+        .arg0 = command->arg0,
+        .arg1 = command->arg1,
+        .result = result,
+    };
+    fspSendPacket(FSP_PACKET_TYPE_COMMAND_ACK, &ack, sizeof(ack));
+}
+
 static void fspHandleFrame(const uint8_t *frame, size_t size, timeUs_t currentTimeUs)
 {
     const fspPacketHeader_t *header = FSP_FRAME_HEADER(frame, size);
@@ -280,6 +364,13 @@ static void fspHandleFrame(const uint8_t *frame, size_t size, timeUs_t currentTi
         const fspPacketAction_t *action = FSP_FRAME_PAYLOAD(frame, size, fspPacketAction_t);
         if (action) {
             fspReceiveAction(action, currentTimeUs);
+        }
+        break;
+    }
+    case FSP_PACKET_TYPE_COMMAND: {
+        const fspPacketCommand_t *command = FSP_FRAME_PAYLOAD(frame, size, fspPacketCommand_t);
+        if (command) {
+            fspReceiveCommand(command, currentTimeUs);
         }
         break;
     }

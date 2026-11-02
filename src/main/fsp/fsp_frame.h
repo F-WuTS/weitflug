@@ -8,7 +8,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#define FSP_VERSION 0x07
+#define FSP_VERSION 0x08
 #define FSP_SENSOR_FRAME_BATCH_COUNT 2
 #define FSP_MAVLINK_TUNNEL_SIZE 64
 #define FSP_CRC_POLY 0xD5
@@ -31,12 +31,14 @@ extern "C" {
          : NULL)
 
 typedef enum {
-    FSP_PACKET_TYPE_HEARTBEAT = 0x01,  // host -> FC, enable telemetry; header only, no payload
-    FSP_PACKET_TYPE_STATE = 0x02,      // FC -> host, contains FSP_SENSOR_FRAME_BATCH_COUNT sensor frames
-    FSP_PACKET_TYPE_ACTION = 0x03,     // host -> FC, contains one action to be applied
-    FSP_PACKET_TYPE_MAVLINK = 0x04,    // FC -> host, contains MAVLink messages tunneled from the FC
-    FSP_PACKET_TYPE_ACTION_ACK = 0x05, // FC -> host, acknowledge received action to measure latency
-    FSP_PACKET_TYPE_STATS = 0x06,      // FC -> host, statistics
+    FSP_PACKET_TYPE_HEARTBEAT = 0x01,   // host -> FC, enable telemetry; header only, no payload
+    FSP_PACKET_TYPE_STATE = 0x02,       // FC -> host, contains FSP_SENSOR_FRAME_BATCH_COUNT sensor frames
+    FSP_PACKET_TYPE_ACTION = 0x03,      // host -> FC, contains one action to be applied
+    FSP_PACKET_TYPE_MAVLINK = 0x04,     // FC -> host, contains MAVLink messages tunneled from the FC
+    FSP_PACKET_TYPE_ACTION_ACK = 0x05,  // FC -> host, acknowledge received action to measure latency
+    FSP_PACKET_TYPE_STATS = 0x06,       // FC -> host, statistics
+    FSP_PACKET_TYPE_COMMAND = 0x07,     // host -> FC, contains one command to apply immediately
+    FSP_PACKET_TYPE_COMMAND_ACK = 0x08, // FC -> host, result of a received command
 } fspPacketType_e;
 
 typedef enum {
@@ -63,6 +65,21 @@ typedef enum {
     FSP_ACTION_HORIZON = 5,
     FSP_ACTION_AUTHORITY_CHANGED = 6,
 } fspActionResult_e;
+
+typedef enum {
+    // arg0 = pinio index, arg1 = 0 off / 1 on
+    FSP_COMMAND_TYPE_PINIO = 1,
+    // arg0 = ESC beacon tone 1..5, arg1 = motor index or 255 for all motors
+    FSP_COMMAND_TYPE_DSHOT = 2,
+} fspCommandType_e;
+
+typedef enum {
+    FSP_COMMAND_OK = 0,
+    FSP_COMMAND_INVALID = 1,     // unknown type, reserved set or out of range arguments
+    FSP_COMMAND_UNAVAILABLE = 2, // pinio index has no pin, or no usable DShot output
+    FSP_COMMAND_DENIED = 3,      // armed, motors running, or an arming or disarm transition
+    FSP_COMMAND_BUSY = 4,        // DShot command queue busy or beacon interval not met
+} fspCommandResult_e;
 
 typedef struct {
     uint8_t version;
@@ -133,6 +150,17 @@ typedef struct {
     uint32_t pidPeriodNs;   // measured PID period (EMA of dt), not the nominal looptime
 } fspPacketStats_t;
 
+typedef struct {
+    uint8_t type;       // fspCommandType_e
+    uint8_t arg0, arg1; // meaning depends on type, see fspCommandType_e
+    uint8_t reserved;   // must be zero
+} fspPacketCommand_t;
+
+typedef struct {
+    uint8_t type, arg0, arg1; // echo of the command
+    uint8_t result;           // fspCommandResult_e
+} fspPacketCommandAck_t;
+
 // Wire sizes; host and FC both rely on natural alignment without padding.
 static_assert(sizeof(fspPacketHeader_t) == 8, "header wire size");
 static_assert(sizeof(fspSensorFrame_t) == 64, "sensor frame wire size");
@@ -141,6 +169,8 @@ static_assert(sizeof(fspPacketAction_t) == 16, "action wire size");
 static_assert(sizeof(fspPacketMavlink_t) == FSP_MAVLINK_TUNNEL_SIZE, "mavlink wire size");
 static_assert(sizeof(fspPacketActionAck_t) == 12, "action ack wire size");
 static_assert(sizeof(fspPacketStats_t) == 20, "stats wire size");
+static_assert(sizeof(fspPacketCommand_t) == 4, "command wire size");
+static_assert(sizeof(fspPacketCommandAck_t) == 4, "command ack wire size");
 
 #ifdef __cplusplus
 }

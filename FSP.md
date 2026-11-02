@@ -1,7 +1,8 @@
 # Flyby Serial Protocol (FSP)
 
-FSP streams FC measurements over UART and accepts scheduled companion actions
-(RC commands, rates or direct motor outputs). Packet definitions live in
+FSP streams FC measurements over UART, accepts scheduled companion actions
+(RC commands, rates or direct motor outputs) and immediate companion commands
+(pin outputs, ESC beacons). Packet definitions live in
 `src/main/fsp/fsp_frame.h`.
 
 ## Build and configuration
@@ -72,7 +73,7 @@ executed PID iterations; ticks dropped by scheduler overruns are not counted
 ## Packets
 
 Each packet is `[header][payload][crc]`, little-endian C layouts, COBS-encoded
-with a `0x00` delimiter. The 8-byte header holds version (`0x07`), packet type,
+with a `0x00` delimiter. The 8-byte header holds version (`0x08`), packet type,
 two reserved bytes and the sender timestamp. CRC-8 uses polynomial `0xD5`, seed
 `0xFF`, over header and payload. Reserved fields are zero. Packets with a wrong
 version, CRC, type or payload size are ignored.
@@ -85,6 +86,8 @@ version, CRC, type or payload size are ignored.
 | 4 MAVLink | FC → host | 1..64 tunnel bytes | 10..73 bytes |
 | 5 Action ack | FC → host | `fspPacketActionAck_t` | 21 bytes |
 | 6 Stats | FC → host | `fspPacketStats_t` | 29 bytes |
+| 7 Command | host → FC | `fspPacketCommand_t` | 13 bytes |
+| 8 Command ack | FC → host | `fspPacketCommandAck_t` | 13 bytes |
 
 Each sensor frame carries timestamp, PID tick, acceleration, gyro, WXYZ attitude,
 RC channels, four RPM values, voltage and the action state of that tick.
@@ -163,6 +166,41 @@ Fallback values follow `rcmap` and normal receiver-range calibration.
 MSP arrivals request receiver processing independently of
 `msp_override_failsafe`; that setting controls whether they also renew the RX
 signal deadline. The timeout applies to conventional MSP override commands too.
+
+## Commands
+
+A command is an asynchronous companion request. The FC applies it on receipt,
+without a target tick, without the authority required by actions and without
+being flushed by authority changes. Like a heartbeat or an action, a command
+renews the telemetry lease.
+
+The payload is `[type][arg0][arg1][reserved]`; reserved must be zero. The FC
+answers every command with an ack echoing `type`, `arg0` and `arg1`.
+
+| Type | arg0 | arg1 |
+| ---: | --- | --- |
+| 1 PinIO | PinIO index 0..PINIO_COUNT-1 | 0 off, 1 on |
+| 2 DShot | ESC beacon tone 1..5 | motor index, or 255 for all motors |
+
+PinIO drives `pinioSet()`, so a pin keeps its state until it is changed again.
+CLI resource indices start at 1 and FSP `arg0` at 0, so `resource PINIO 1 B011`
+assigns `arg0 = 0`. Set `pinio_box = 255, 255, 255, 255` (none), otherwise the
+20 Hz PINIOBOX task overwrites the FSP state; on SpeedyBee F405 MINI PinIO 1 is
+PB11 (inverted) and `pinio_box` entry 0 defaults to the ARM box.
+
+DShot sends `DSHOT_CMD_BEACON1..5` inline, the same path as the ESC beacon in
+`io/beeper.c`. The FC has to be disarmed with idle motors and outside the 1.2 s
+beacon guard that separates beacons from arming and disarming, DShot has to be
+the motor protocol with the outputs enabled, and beacons need at least 450 ms
+spacing, matching the ESC tone duration.
+
+| Result | Meaning |
+| ---: | --- |
+| 0 OK | applied |
+| 1 INVALID | unknown type, reserved set, or out-of-range arguments |
+| 2 UNAVAILABLE | PinIO index has no pin, or no usable DShot output |
+| 3 DENIED | armed, motors running, or arming or disarm transition |
+| 4 BUSY | ESC command queue busy, or a beacon is under 450 ms old |
 
 ## Other changes from stock Betaflight
 
