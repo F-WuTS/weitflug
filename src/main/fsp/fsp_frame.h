@@ -41,6 +41,7 @@ typedef enum {
 
 typedef enum {
     // values[] = roll, pitch, yaw, throttle as RC commands in 1000..2000 us, applied as MSP override
+    // on receipt; applyTick is ignored and the action is never queued
     FSP_ACTION_MODE_RC = 1,
     // values[0..2] = roll, pitch, yaw rate in 0.1 deg/s (-20000..20000); values[3] = collective 0..10000
     FSP_ACTION_MODE_RATES = 2,
@@ -49,7 +50,7 @@ typedef enum {
 } fspActionMode_e;
 
 typedef enum {
-    FSP_ACTION_FLAG_AUTHORITY = (1U << 0),     // armed, MSP override selected, Acro, radio healthy
+    FSP_ACTION_FLAG_AUTHORITY = (1U << 0),     // rate/motor authority: armed, MSP override selected, Acro, radio healthy
     FSP_ACTION_FLAG_OUTPUT_ACTIVE = (1U << 1), // an action drove the outputs on this tick
     FSP_ACTION_FLAG_TIMED_OUT = (1U << 2),     // no new action within the action timeout, outputs neutral
 } fspActionFlag_e;
@@ -95,7 +96,7 @@ typedef struct {
     fspRcData_t rc;
     uint16_t rpm[4];
     uint16_t batteryVoltage;
-    uint32_t actionTick; // applyTick of the action in effect on this tick, 0 = none
+    uint32_t actionTick; // applyTick of the scheduled (rate/motor) action in effect on this tick, 0 = none
     uint8_t actionMode;  // fspActionMode_e of that action, 0 = none
     uint8_t actionFlags; // fspActionFlag_e bits
     uint8_t queueDepth;  // actions still waiting
@@ -107,7 +108,7 @@ typedef struct {
 } fspPacketState_t;
 
 typedef struct {
-    uint32_t applyTick; // PID tick on which the action takes effect
+    uint32_t applyTick; // PID tick on which the action takes effect (ignored for RC)
     int16_t values[4];  // meaning and range depend on mode, see fspActionMode_e
     uint8_t mode;       // fspActionMode_e
     uint8_t reserved[3];

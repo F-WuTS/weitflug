@@ -101,7 +101,8 @@ TX buffer is full.
 ## Scheduled actions
 
 An action carries a target PID tick (`applyTick`), a mode and four signed
-16-bit values:
+16-bit values. Rate and motor actions are scheduled on their target tick; RC
+actions are applied immediately (see below):
 
 | Mode | Values |
 | --- | --- |
@@ -109,7 +110,14 @@ An action carries a target PID tick (`applyTick`), a mode and four signed
 | 2 Rates | roll/pitch/yaw in 0.1 deg/s (±20000), collective 0..10000 |
 | 3 Motors | motor indices 0..3 in 0..10000; zero stops the motor, positive values map to the configured low/high output endpoints |
 
-The four-entry FIFO accepts increasing target ticks, at most
+RC actions work like the RC packet of earlier protocol versions: they are fed
+into the MSP override as soon as they are received, `applyTick` is ignored and
+they never enter the queue or replace the active scheduled action. Their ack
+echoes `applyTick` and reports `OK` or `INVALID` (out-of-range values or nonzero
+reserved bytes) only. There is no FSP authority gate; the MSP override switch
+and its timeout decide whether the values are used.
+
+The four-entry FIFO for rate and motor actions accepts increasing target ticks, at most
 `fsp_action_max_ahead_ticks` ahead. The PID task applies an action only on its
 target tick; late, full-queue, out-of-order, too-far-ahead and invalid actions
 are rejected with the code in the ack. Targeting `pidTick + N` of a received
@@ -118,22 +126,19 @@ timestamps or `skippedTicks` to detect scheduler gaps.
 
 Rates enter before rate-error calculation, with radio feedforward excluded;
 collective uses the normal mixer. Direct motor mode bypasses PID/mixing.
-RC actions are fed into the MSP override on their target tick.
 
-Authority:
-- RC actions need the physical MSP override switch and a healthy radio.
-- Rate and motor actions additionally need arming, Acro, four motors and a
-  non-3D/non-launch/non-crash-flip configuration.
+Rate and motor actions need the physical MSP override switch, a healthy radio,
+arming, Acro, four motors and a non-3D/non-launch/non-crash-flip configuration.
 
 Any authority change flushes pending and active actions. The active action is
 held between updates; after `fsp_action_timeout_ms` without a new one, rate and
-motor modes output motor-stop values. RC mode falls back through the RC
+motor modes output motor-stop values. RC actions fall back through the RC
 override timeout below. Disarmed actions rehearse timing while keeping normal
 disarmed outputs.
 
-Each sensor frame reports the action in effect on its tick: `actionTick`
+Each sensor frame reports the scheduled (rate/motor) action in effect on its tick: `actionTick`
 (target tick, 0 = none), `actionMode`, `queueDepth` and `actionFlags`:
-bit 0 authority for the active mode (rates/motors when none is active),
+bit 0 rate/motor authority,
 bit 1 the action drove the outputs, bit 2 timed out.
 
 Host tests for the allocation-free scheduler:

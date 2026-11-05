@@ -49,9 +49,23 @@ static bool valuesValid(const fspPacketAction_t *a)
     return true;
 }
 
+static bool actionValid(const fspPacketAction_t *a)
+{
+    return !a->reserved[0] && !a->reserved[1] && !a->reserved[2] && valuesValid(a);
+}
+
+fspActionResult_e fspActionsCheckRc(fspActionScheduler_t *s, const fspPacketAction_t *a)
+{
+    if (a->mode != FSP_ACTION_MODE_RC || !actionValid(a)) {
+        return reject(s, FSP_ACTION_INVALID);
+    }
+    return FSP_ACTION_OK;
+}
+
 fspActionResult_e fspActionsEnqueue(fspActionScheduler_t *s, const fspPacketAction_t *a)
 {
-    if (a->reserved[0] || a->reserved[1] || a->reserved[2] || !valuesValid(a)) {
+    // RC actions are applied on receipt and never scheduled
+    if (a->mode == FSP_ACTION_MODE_RC || !actionValid(a)) {
         return reject(s, FSP_ACTION_INVALID);
     }
     const int32_t ahead = (int32_t)(a->applyTick - s->pidTick);
@@ -75,17 +89,15 @@ fspActionResult_e fspActionsEnqueue(fspActionScheduler_t *s, const fspPacketActi
     return FSP_ACTION_OK;
 }
 
-static bool authorityAllows(uint8_t authority, uint8_t mode)
+// Scheduled (rate and motor) actions need both authority levels
+static bool authorityAllows(uint8_t authority)
 {
-    if (!(authority & FSP_AUTHORITY_RC)) {
-        return false;
-    }
-    return mode == FSP_ACTION_MODE_RC || (authority & FSP_AUTHORITY_CONTROL);
+    return (authority & FSP_AUTHORITY_RC) && (authority & FSP_AUTHORITY_CONTROL);
 }
 
 bool fspActionsOutputActive(const fspActionScheduler_t *s)
 {
-    return s->haveActive && authorityAllows(s->authority, s->active.mode);
+    return s->haveActive && authorityAllows(s->authority);
 }
 
 static void trackPeriod(fspActionScheduler_t *s, uint32_t nowUs)
@@ -142,10 +154,9 @@ void fspActionsTick(fspActionScheduler_t *s, uint32_t nowUs, uint8_t authority)
 
 void fspActionsFrameState(const fspActionScheduler_t *s, fspSensorFrame_t *frame)
 {
-    const uint8_t mode = s->haveActive ? s->active.mode : FSP_ACTION_MODE_RATES;
     frame->actionTick = s->haveActive ? s->active.applyTick : 0;
     frame->actionMode = s->haveActive ? s->active.mode : 0;
-    frame->actionFlags = (authorityAllows(s->authority, mode) ? FSP_ACTION_FLAG_AUTHORITY : 0) |
+    frame->actionFlags = (authorityAllows(s->authority) ? FSP_ACTION_FLAG_AUTHORITY : 0) |
                          (fspActionsOutputActive(s) ? FSP_ACTION_FLAG_OUTPUT_ACTIVE : 0) |
                          (s->timedOut ? FSP_ACTION_FLAG_TIMED_OUT : 0);
     frame->queueDepth = s->count;

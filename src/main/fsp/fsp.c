@@ -244,13 +244,35 @@ static void fspRenewTelemetryLease(timeUs_t currentTimeUs)
     fspState.lastTelemetryRequestUs = currentTimeUs;
 }
 
+// RC actions go straight into the MSP override, like the mainline RC packet.
+// Channels beyond throttle/yaw are not sent and stay with the radio.
+static void fspApplyRcAction(const fspPacketAction_t *action)
+{
+    const uint16_t frame[] = {
+        [0] = action->values[0], // roll
+        [1] = action->values[1], // pitch
+        [2] = action->values[3], // throttle
+        [3] = action->values[2], // yaw
+    };
+    rxMspFrameReceive(frame, ARRAYLEN(frame));
+}
+
 static void fspReceiveAction(const fspPacketAction_t *action, timeUs_t currentTimeUs)
 {
     fspRenewTelemetryLease(currentTimeUs);
+    fspActionResult_e result;
+    if (action->mode == FSP_ACTION_MODE_RC) {
+        result = fspActionsCheckRc(&actions, action);
+        if (result == FSP_ACTION_OK) {
+            fspApplyRcAction(action);
+        }
+    } else {
+        result = fspActionsEnqueue(&actions, action);
+    }
     const fspPacketActionAck_t ack = {
         .applyTick = action->applyTick,
         .recvTick = actions.pidTick,
-        .result = fspActionsEnqueue(&actions, action),
+        .result = result,
         .queueDepth = actions.count,
     };
     fspSendPacket(FSP_PACKET_TYPE_ACTION_ACK, &ack, sizeof(ack));
@@ -447,18 +469,6 @@ void fspActionPidTick(timeUs_t currentTimeUs)
     const uint8_t authority = (selected && healthy ? FSP_AUTHORITY_RC : 0) |
                               (armed && acro && supported ? FSP_AUTHORITY_CONTROL : 0);
     fspActionsTick(&actions, currentTimeUs, authority);
-
-    // RC actions go through the MSP override on the tick they become active.
-    // Channels beyond throttle/yaw are not sent and stay with the radio.
-    if (actions.activated && actions.active.mode == FSP_ACTION_MODE_RC && fspActionsOutputActive(&actions)) {
-        const uint16_t frame[] = {
-            [0] = actions.active.values[0], // roll
-            [1] = actions.active.values[1], // pitch
-            [2] = actions.active.values[3], // throttle
-            [3] = actions.active.values[2], // yaw
-        };
-        rxMspFrameReceive(frame, ARRAYLEN(frame));
-    }
 }
 
 static bool fspActionModeActive(fspActionMode_e mode)

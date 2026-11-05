@@ -63,16 +63,16 @@ static void testQueueAndValidation(void)
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
     a = action(6, FSP_ACTION_MODE_MOTORS); a.values[1] = 10001;
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
-    a = action(6, FSP_ACTION_MODE_RC); a.values[2] = 999;
-    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
     a = action(6, 0);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
-    a = action(6, FSP_ACTION_MODE_RC); a.reserved[2] = 1;
+    a = action(6, FSP_ACTION_MODE_MOTORS); a.reserved[2] = 1;
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
+    a = action(6, FSP_ACTION_MODE_RC); // RC actions are never scheduled
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
 
     // Counters are disjoint
     fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
-    a = action(0, FSP_ACTION_MODE_RC);
+    a = action(0, FSP_ACTION_MODE_RATES);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_LATE);
     a = action(1, 0);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_INVALID);
@@ -100,24 +100,58 @@ static void testAuthorityAndTimeout(void)
     fspActionsTick(&s, 4 * PERIOD_US + TIMEOUT_US, ALL);
     assert(s.timedOut);
 
-    // Losing control authority drops rates; RC authority alone only allows RC actions
+    // Losing control authority drops rates; RC authority alone does not drive them
     fspActionsTick(&s, 4 * PERIOD_US + TIMEOUT_US + PERIOD_US, FSP_AUTHORITY_RC);
     assert(!s.haveActive && !fspActionsOutputActive(&s));
     a = action(s.pidTick + 1, FSP_ACTION_MODE_RATES);
     assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
     fspActionsTick(&s, s.lastTickUs + PERIOD_US, FSP_AUTHORITY_RC);
     assert(s.haveActive && !fspActionsOutputActive(&s));
-    a = action(s.pidTick + 1, FSP_ACTION_MODE_RC);
-    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
-    fspActionsTick(&s, s.lastTickUs + PERIOD_US, FSP_AUTHORITY_RC);
-    assert(fspActionsOutputActive(&s));
-
-    // Sensor frame state mirrors the active action
     fspSensorFrame_t frame = {0};
     fspActionsFrameState(&s, &frame);
-    assert(frame.actionTick == s.pidTick && frame.actionMode == FSP_ACTION_MODE_RC);
+    assert(frame.actionFlags == 0);
+
+    // Sensor frame state mirrors the active action
+    a = action(s.pidTick + 2, FSP_ACTION_MODE_MOTORS);
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
+    fspActionsTick(&s, s.lastTickUs + PERIOD_US, ALL); // authority change flushes
+    a = action(s.pidTick + 1, FSP_ACTION_MODE_MOTORS);
+    assert(fspActionsEnqueue(&s, &a) == FSP_ACTION_OK);
+    fspActionsTick(&s, s.lastTickUs + PERIOD_US, ALL);
+    assert(fspActionsOutputActive(&s));
+    fspActionsFrameState(&s, &frame);
+    assert(frame.actionTick == s.pidTick && frame.actionMode == FSP_ACTION_MODE_MOTORS);
     assert(frame.actionFlags == (FSP_ACTION_FLAG_AUTHORITY | FSP_ACTION_FLAG_OUTPUT_ACTIVE));
     assert(frame.queueDepth == 0);
+}
+
+static void testRcImmediate(void)
+{
+    fspActionScheduler_t s;
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    for (uint32_t tick = 1; tick <= 10; tick++) tickAt(&s, tick, ALL);
+    fspPacketAction_t queued = action(12, FSP_ACTION_MODE_RATES);
+    assert(fspActionsEnqueue(&s, &queued) == FSP_ACTION_OK);
+
+    // Accepted whatever the apply tick, without touching the scheduler
+    const uint32_t ticks[] = {0, 5, 10, 11, 10 + MAX_AHEAD + 1, UINT32_MAX};
+    for (unsigned i = 0; i < sizeof(ticks) / sizeof(ticks[0]); i++) {
+        fspPacketAction_t a = action(ticks[i], FSP_ACTION_MODE_RC);
+        assert(fspActionsCheckRc(&s, &a) == FSP_ACTION_OK);
+    }
+    assert(s.count == 1 && !s.haveActive);
+    assert(s.stats.lateCount == 0 && s.stats.rejectedCount == 0);
+
+    // Values and reserved bytes are still validated
+    fspPacketAction_t a = action(11, FSP_ACTION_MODE_RC); a.values[2] = 999;
+    assert(fspActionsCheckRc(&s, &a) == FSP_ACTION_INVALID);
+    a = action(11, FSP_ACTION_MODE_RC); a.values[3] = 2001;
+    assert(fspActionsCheckRc(&s, &a) == FSP_ACTION_INVALID);
+    a = action(11, FSP_ACTION_MODE_RC); a.reserved[0] = 1;
+    assert(fspActionsCheckRc(&s, &a) == FSP_ACTION_INVALID);
+    a = action(11, FSP_ACTION_MODE_RATES);
+    assert(fspActionsCheckRc(&s, &a) == FSP_ACTION_INVALID);
+    assert(s.stats.rejectedCount == 4 && s.count == 1);
 }
 
 static void testWrapAndLate(void)
@@ -161,7 +195,8 @@ int main(void)
 {
     testQueueAndValidation();
     testAuthorityAndTimeout();
+    testRcImmediate();
     testWrapAndLate();
     testPeriodAndSkips();
-    puts("scheduled actions: queue/validation/authority/timeout/wrap/late/period/skips passed");
+    puts("scheduled actions: queue/validation/authority/timeout/rc/wrap/late/period/skips passed");
 }

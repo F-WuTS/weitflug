@@ -6,8 +6,8 @@
 #define FSP_ACTION_QUEUE_CAPACITY 4U
 
 // Authority levels passed to fspActionsTick
-#define FSP_AUTHORITY_RC (1U << 0)      // MSP override selected, radio healthy: RC actions allowed
-#define FSP_AUTHORITY_CONTROL (1U << 1) // armed, Acro, supported: rate and motor actions allowed (needs RC too)
+#define FSP_AUTHORITY_RC (1U << 0)      // MSP override selected, radio healthy
+#define FSP_AUTHORITY_CONTROL (1U << 1) // armed, Acro, supported; rate and motor actions need both bits
 
 typedef struct {
     fspPacketAction_t queue[FSP_ACTION_QUEUE_CAPACITY];
@@ -25,6 +25,9 @@ typedef struct {
 } fspActionScheduler_t;
 
 void fspActionsInit(fspActionScheduler_t *s, uint32_t timeoutUs, uint32_t maxAheadTicks, uint32_t nominalPeriodUs);
+// RC actions skip the scheduler: validate only, applyTick is ignored.
+fspActionResult_e fspActionsCheckRc(fspActionScheduler_t *s, const fspPacketAction_t *action);
+// Rate and motor actions only; RC actions are rejected as invalid.
 fspActionResult_e fspActionsEnqueue(fspActionScheduler_t *s, const fspPacketAction_t *action);
 void fspActionsTick(fspActionScheduler_t *s, uint32_t nowUs, uint8_t authority);
 // The active action may drive its outputs (authority sufficient for its mode).
