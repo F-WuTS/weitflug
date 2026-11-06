@@ -455,6 +455,7 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     }
 #endif
     frame->batteryVoltage = getBatteryVoltage();
+    frame->batteryAmperage = constrain(getAmperage(), INT16_MIN, INT16_MAX);
 }
 
 void fspActionPidTick(timeUs_t currentTimeUs)

@@ -5,5 +5,6 @@ make FOXEERH743 EXTRA_FLAGS="\
     -DUSE_SERIALRX_GHST\
     -DUSE_VTX\
     -DUSE_OSD\
-    -DUSE_PINIO
+    -DUSE_PINIO\
+    -DUSE_CHIRP
     "

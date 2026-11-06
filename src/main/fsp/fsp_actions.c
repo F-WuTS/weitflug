@@ -160,5 +160,6 @@ void fspActionsFrameState(const fspActionScheduler_t *s, fspSensorFrame_t *frame
                          (fspActionsOutputActive(s) ? FSP_ACTION_FLAG_OUTPUT_ACTIVE : 0) |
                          (s->timedOut ? FSP_ACTION_FLAG_TIMED_OUT : 0);
     frame->queueDepth = s->count;
+    frame->reserved16 = 0;
     frame->reserved = 0;
 }

@@ -72,7 +72,7 @@ executed PID iterations; ticks dropped by scheduler overruns are not counted
 ## Packets
 
 Each packet is `[header][payload][crc]`, little-endian C layouts, COBS-encoded
-with a `0x00` delimiter. The 8-byte header holds version (`0x07`), packet type,
+with a `0x00` delimiter. The 8-byte header holds version (`0x08`), packet type,
 two reserved bytes and the sender timestamp. CRC-8 uses polynomial `0xD5`, seed
 `0xFF`, over header and payload. Reserved fields are zero. Packets with a wrong
 version, CRC, type or payload size are ignored.
@@ -80,17 +80,20 @@ version, CRC, type or payload size are ignored.
 | Type | Direction | Payload | Decoded size |
 | ---: | --- | --- | ---: |
 | 1 Heartbeat | host → FC | none | 9 bytes |
-| 2 State | FC → host | two 64-byte sensor frames | 137 bytes |
+| 2 State | FC → host | two 68-byte sensor frames | 145 bytes |
 | 3 Action | host → FC | `fspPacketAction_t` | 25 bytes |
 | 4 MAVLink | FC → host | 1..64 tunnel bytes | 10..73 bytes |
 | 5 Action ack | FC → host | `fspPacketActionAck_t` | 21 bytes |
 | 6 Stats | FC → host | `fspPacketStats_t` | 29 bytes |
 
 Each sensor frame carries timestamp, PID tick, acceleration, gyro, WXYZ attitude,
-RC channels, four RPM values, voltage and the action state of that tick.
-Scale acceleration by `1 / acc1G`, gyro by `gyroDpsLsb`, quaternion by
-`1 / 32768`, voltage by `0.01 V`. RC telemetry reflects receiver-selected
-`rcData`. See `fsp_frame.h` for offsets and field types.
+RC channels, four RPM values, battery voltage, battery current and the action
+state of that tick. Scale acceleration by `1 / acc1G`, gyro by `gyroDpsLsb`,
+quaternion by `1 / 32768`, voltage by `0.01 V` and current by `0.01 A`.
+Both battery values are the filtered FC battery meter readings, so they stay 0
+with the corresponding meter source disabled; current is signed and negative
+while charging. RC telemetry reflects receiver-selected `rcData`.
+See `fsp_frame.h` for offsets and field types.
 
 The FC answers every action with an ack (apply tick, PID tick at receipt,
 result, queue depth) and every heartbeat with a stats packet (rejection

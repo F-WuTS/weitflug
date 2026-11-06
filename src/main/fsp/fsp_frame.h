@@ -8,7 +8,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#define FSP_VERSION 0x07
+#define FSP_VERSION 0x08
 #define FSP_SENSOR_FRAME_BATCH_COUNT 2
 #define FSP_MAVLINK_TUNNEL_SIZE 64
 #define FSP_CRC_POLY 0xD5
@@ -95,11 +95,13 @@ typedef struct {
     fspAtt_t attitude;
     fspRcData_t rc;
     uint16_t rpm[4];
-    uint16_t batteryVoltage;
-    uint32_t actionTick; // applyTick of the scheduled (rate/motor) action in effect on this tick, 0 = none
-    uint8_t actionMode;  // fspActionMode_e of that action, 0 = none
-    uint8_t actionFlags; // fspActionFlag_e bits
-    uint8_t queueDepth;  // actions still waiting
+    uint16_t batteryVoltage; // centivolts (0.01 V)
+    int16_t batteryAmperage; // centiamperes (0.01 A), negative while charging
+    uint16_t reserved16;     // keeps actionTick 4-byte aligned without padding
+    uint32_t actionTick;     // applyTick of the scheduled (rate/motor) action in effect on this tick, 0 = none
+    uint8_t actionMode;      // fspActionMode_e of that action, 0 = none
+    uint8_t actionFlags;     // fspActionFlag_e bits
+    uint8_t queueDepth;      // actions still waiting
     uint8_t reserved;
 } fspSensorFrame_t;
 
@@ -136,8 +138,9 @@ typedef struct {
 
 // Wire sizes; host and FC both rely on natural alignment without padding.
 static_assert(sizeof(fspPacketHeader_t) == 8, "header wire size");
-static_assert(sizeof(fspSensorFrame_t) == 64, "sensor frame wire size");
-static_assert(sizeof(fspPacketState_t) == 64 * FSP_SENSOR_FRAME_BATCH_COUNT, "state wire size");
+static_assert(sizeof(fspSensorFrame_t) == 68, "sensor frame wire size");
+static_assert(offsetof(fspSensorFrame_t, actionTick) == 60, "sensor frame action offset");
+static_assert(sizeof(fspPacketState_t) == 68 * FSP_SENSOR_FRAME_BATCH_COUNT, "state wire size");
 static_assert(sizeof(fspPacketAction_t) == 16, "action wire size");
 static_assert(sizeof(fspPacketMavlink_t) == FSP_MAVLINK_TUNNEL_SIZE, "mavlink wire size");
 static_assert(sizeof(fspPacketActionAck_t) == 12, "action ack wire size");
