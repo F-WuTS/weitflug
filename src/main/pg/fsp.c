@@ -27,13 +27,14 @@
 
 #include "fsp.h"
 
-PG_REGISTER_WITH_RESET_TEMPLATE(fspConfig_t, fspConfig, PG_FSP_CONFIG, 0);
+PG_REGISTER_WITH_RESET_TEMPLATE(fspConfig_t, fspConfig, PG_FSP_CONFIG, 1);
 
 PG_RESET_TEMPLATE(fspConfig_t, fspConfig,
     .telemetry_hz = FSP_PERIOD_HZ,
     .telemetry_timeout_ms = 500,
     .action_timeout_ms = 200,
     .action_max_ahead_ticks = 128,
+    .status_hz = 50,
 );
 
 #endif // USE_FSP

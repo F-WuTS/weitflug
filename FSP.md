@@ -51,6 +51,7 @@ CLI settings (parameter group `fspConfig`, applied at boot):
 | `fsp_telemetry_timeout_ms` | 500 | 50..5000 | Telemetry lease after the last heartbeat or action |
 | `fsp_action_timeout_ms` | 200 | 10..2000 | Neutral outputs this long after the last applied action |
 | `fsp_action_max_ahead_ticks` | 128 | 1..4096 | Actions further ahead are rejected (`HORIZON`) |
+| `fsp_status_hz` | 50 | 1..200 | Status packet rate |
 
 ## Telemetry and timing
 
@@ -59,8 +60,9 @@ A valid heartbeat or action starts telemetry and renews its lease
 telemetry-only operation. Lease expiry stops transmission and clears queued
 samples.
 
-PID-loop captures are batched in pairs. The low-priority FSP task drains a
-four-sample queue; overflow drops new captures. Lockstep sampling uses
+Each PID-loop capture is sent in its own state packet. The low-priority FSP
+task sends every queued capture that fits the TX buffer on each run (four-sample
+queue; overflow drops new captures), so a capture leaves with the next task run. Lockstep sampling uses
 `N = HZ_TO_INTERVAL_US(fsp_telemetry_hz) / targetPidLooptime + 1` PID iterations.
 A 2026 Hz PID loop with a 600 Hz ceiling yields about 506 samples/s.
 
@@ -72,28 +74,37 @@ executed PID iterations; ticks dropped by scheduler overruns are not counted
 ## Packets
 
 Each packet is `[header][payload][crc]`, little-endian C layouts, COBS-encoded
-with a `0x00` delimiter. The 8-byte header holds version (`0x08`), packet type,
-two reserved bytes and the sender timestamp. CRC-8 uses polynomial `0xD5`, seed
+with a `0x00` delimiter. The 8-byte header holds version (`0x09`), packet type,
+two reserved bytes and the sender timestamp (transmission time). CRC-8 uses polynomial `0xD5`, seed
 `0xFF`, over header and payload. Reserved fields are zero. Packets with a wrong
 version, CRC, type or payload size are ignored.
 
 | Type | Direction | Payload | Decoded size |
 | ---: | --- | --- | ---: |
 | 1 Heartbeat | host → FC | none | 9 bytes |
-| 2 State | FC → host | two 68-byte sensor frames | 145 bytes |
+| 2 State | FC → host | one 40-byte sensor frame | 49 bytes |
 | 3 Action | host → FC | `fspPacketAction_t` | 25 bytes |
 | 4 MAVLink | FC → host | 1..64 tunnel bytes | 10..73 bytes |
 | 5 Action ack | FC → host | `fspPacketActionAck_t` | 21 bytes |
 | 6 Stats | FC → host | `fspPacketStats_t` | 29 bytes |
+| 7 Status | FC → host | `fspPacketStatus_t` | 45 bytes |
 
-Each sensor frame carries timestamp, PID tick, acceleration, gyro, WXYZ attitude,
-RC channels, four RPM values, battery voltage, battery current and the action
-state of that tick. Scale acceleration by `1 / acc1G`, gyro by `gyroDpsLsb`,
+Each sensor frame carries PID tick, timestamp, raw acceleration and gyro, the
+primary RC channels (roll, pitch, yaw, throttle), four RPM values and the
+action state of that tick. Values that change slowly or never travel in the
+status packet, sent at `fsp_status_hz` and right after telemetry starts: WXYZ
+attitude, AUX3/AUX4, battery voltage and current, the scales `acc1G` and
+`gyroDpsLsb`, the exact tick and mode of the action in effect and the
+authority bits. Scale acceleration by `1 / acc1G`, gyro by `gyroDpsLsb`,
 quaternion by `1 / 32768`, voltage by `0.01 V` and current by `0.01 A`.
 Both battery values are the filtered FC battery meter readings, so they stay 0
 with the corresponding meter source disabled; current is signed and negative
 while charging. RC telemetry reflects receiver-selected `rcData`.
 See `fsp_frame.h` for offsets and field types.
+
+At 1 Mbaud (100 kB/s) and 1 kHz captures the link carries about 51 kB/s of
+state, 2.5 kB/s of status and the acks; v8's batched 68-byte frames needed
+about 74 kB/s and held the first frame of each pair back by one capture.
 
 The FC answers every action with an ack (apply tick, PID tick at receipt,
 result, queue depth) and every heartbeat with a stats packet (rejection
@@ -139,10 +150,11 @@ motor modes output motor-stop values. RC actions fall back through the RC
 override timeout below. Disarmed actions rehearse timing while keeping normal
 disarmed outputs.
 
-Each sensor frame reports the scheduled (rate/motor) action in effect on its tick: `actionTick`
-(target tick, 0 = none), `actionMode`, `queueDepth` and `actionFlags`:
-bit 0 rate/motor authority,
-bit 1 the action drove the outputs, bit 2 timed out.
+Each sensor frame reports the scheduled (rate/motor) action in effect on its tick:
+`actionFlags` bit 0 rate/motor authority, bit 1 the action drove the outputs,
+bit 2 timed out, bits 3..4 its mode (0 = none); `actionAge` = PID tick minus
+its target tick (254 = 254 or more, 255 = none); and `queueDepth`. The target
+tick is `pidTick - actionAge`; the status packet carries it exactly.
 
 Host tests for the allocation-free scheduler:
 

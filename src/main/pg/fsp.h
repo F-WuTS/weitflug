@@ -29,6 +29,7 @@ typedef struct fspConfig_s {
     uint16_t telemetry_timeout_ms;   // telemetry stops this long after the last heartbeat or action
     uint16_t action_timeout_ms;      // outputs go neutral this long after the last applied action
     uint16_t action_max_ahead_ticks; // actions further ahead are rejected with FSP_ACTION_HORIZON
+    uint16_t status_hz;              // status packet rate (attitude, aux, battery, scales, exact action tick)
 } fspConfig_t;
 
 PG_DECLARE(fspConfig_t, fspConfig);

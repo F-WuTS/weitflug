@@ -165,6 +165,7 @@
 #define PARAM_NAME_FSP_TELEMETRY_TIMEOUT_MS "fsp_telemetry_timeout_ms"
 #define PARAM_NAME_FSP_ACTION_TIMEOUT_MS "fsp_action_timeout_ms"
 #define PARAM_NAME_FSP_ACTION_MAX_AHEAD_TICKS "fsp_action_max_ahead_ticks"
+#define PARAM_NAME_FSP_STATUS_HZ "fsp_status_hz"
 #define PARAM_NAME_ALTITUDE_SOURCE "altitude_source"
 #define PARAM_NAME_ALTITUDE_PREFER_BARO "altitude_prefer_baro"
 #define PARAM_NAME_ALTITUDE_LPF "altitude_lpf"

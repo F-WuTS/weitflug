@@ -38,7 +38,8 @@
 // COBS adds one code byte per 254 data bytes plus the delimiter
 #define FSP_COBS_ENCODED_SIZE(n) ((n) + (n) / 254 + 2)
 #define FSP_FRAME_SIZE(payloadSize) (sizeof(fspPacketHeader_t) + (payloadSize) + 1)
-#define FSP_SENSOR_FRAME_QUEUE_SIZE (FSP_SENSOR_FRAME_BATCH_COUNT + 3)
+// One slot stays empty to tell a full queue from an empty one: four frames of slack for a late FSP task
+#define FSP_SENSOR_FRAME_QUEUE_SIZE 5
 
 #ifdef FSP_ENABLE_MAVLINK
 #define FSP_MAVLINK_BUFFER_SIZE 512
@@ -63,6 +64,8 @@ typedef struct {
 #endif
     fspSensorFrame_t sensorFrameQueue[FSP_SENSOR_FRAME_QUEUE_SIZE];
     size_t sensorFrameQueueHead, sensorFrameQueueTail;
+    timeUs_t statusIntervalUs;
+    timeUs_t nextStatusUs;
 #ifdef FSP_ENABLE_MAVLINK
     uint8_t mavlinkPacketBuffer[MAVLINK_MAX_PACKET_LEN];
     uint8_t mavlinkBuffer[FSP_MAVLINK_BUFFER_SIZE];
@@ -93,6 +96,7 @@ void fspInit(void)
 {
     memset(&fspState, 0, sizeof(fspState_t));
     fspState.telemetryTimeoutUs = fspConfig()->telemetry_timeout_ms * 1000U;
+    fspState.statusIntervalUs = HZ_TO_INTERVAL_US(fspConfig()->status_hz);
     fspActionsInit(&actions, fspConfig()->action_timeout_ms * 1000U, fspConfig()->action_max_ahead_ticks,
                    targetPidLooptime);
 
@@ -186,7 +190,7 @@ void fspHandleMavlinkMessage(const mavlink_message_t *msg, const mavlink_status_
 // Frame, CRC and COBS-encode one packet; nothing is written unless it fits the TX buffer.
 static bool fspSendPacket(fspPacketType_e type, const void *payload, size_t payloadSize)
 {
-    uint8_t frame[FSP_FRAME_SIZE(sizeof(fspPacketState_t))] __attribute__((aligned(4)));
+    uint8_t frame[FSP_FRAME_SIZE(FSP_MAX_PAYLOAD_SIZE)] __attribute__((aligned(4)));
     if (FSP_FRAME_SIZE(payloadSize) > sizeof(frame)) {
         return false;
     }
@@ -214,14 +218,39 @@ static bool fspTxFits(size_t payloadSize)
     return serialTxBytesFree(fspState.port) >= FSP_COBS_ENCODED_SIZE(FSP_FRAME_SIZE(payloadSize));
 }
 
+// One sensor frame per packet: a capture leaves with the next FSP task run instead of waiting for a batch.
 static void fspSendState(void)
 {
     fspPacketState_t state;
-    for (size_t i = 0; i < FSP_SENSOR_FRAME_BATCH_COUNT; i++) {
-        state.sensorFrames[i] = fspState.sensorFrameQueue[fspState.sensorFrameQueueTail];
-        fspState.sensorFrameQueueTail = (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
-    }
+    state.frame = fspState.sensorFrameQueue[fspState.sensorFrameQueueTail];
+    fspState.sensorFrameQueueTail = (fspState.sensorFrameQueueTail + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
     fspSendPacket(FSP_PACKET_TYPE_STATE, &state, sizeof(state));
+}
+
+static void fspSendStatus(timeUs_t currentTimeUs)
+{
+    fspPacketStatus_t status = {0};
+    status.pidTick = actions.pidTick;
+    status.timestamp = currentTimeUs;
+    status.attitude.w = lrintf(imuAttitudeQuaternion.w * FSP_QUATERNION_SCALE);
+    status.attitude.x = lrintf(imuAttitudeQuaternion.x * FSP_QUATERNION_SCALE);
+    status.attitude.y = lrintf(imuAttitudeQuaternion.y * FSP_QUATERNION_SCALE);
+    status.attitude.z = lrintf(imuAttitudeQuaternion.z * FSP_QUATERNION_SCALE);
+    status.aux3 = lrintf(rcData[AUX3]);
+    status.aux4 = lrintf(rcData[AUX4]);
+#if defined(ESC_XR8_PRO)
+    xr8ProTelemetryFrame_t *escFrame = (xr8ProTelemetryFrame_t *)escSensorXR8ProFrame();
+    if (escFrame) {
+        status.aux3 = escFrame->throttle1;
+        status.aux4 = escFrame->throttle2;
+    }
+#endif
+    status.batteryVoltage = getBatteryVoltageLatest();
+    status.batteryAmperage = constrain(getAmperageLatest(), INT16_MIN, INT16_MAX);
+    status.gyroDpsLsb = gyro.scale;
+    status.acc1G = acc.dev.acc_1G;
+    fspActionsStatus(&actions, &status);
+    fspSendPacket(FSP_PACKET_TYPE_STATUS, &status, sizeof(status));
 }
 
 #ifdef FSP_ENABLE_MAVLINK
@@ -240,6 +269,9 @@ static void fspSendMavlink(void)
 
 static void fspRenewTelemetryLease(timeUs_t currentTimeUs)
 {
+    if (!fspState.telemetryEnabled) {
+        fspState.nextStatusUs = currentTimeUs; // the host gets the scales with the first frames
+    }
     fspState.telemetryEnabled = true;
     fspState.lastTelemetryRequestUs = currentTimeUs;
 }
@@ -337,12 +369,17 @@ void fspUpdate(timeUs_t currentTimeUs)
         return;
     }
 
-    // Check if FSP_SENSOR_FRAME_BATCH_COUNT frames are available in the queue
-    size_t framesAvailable =
-        (fspState.sensorFrameQueueHead + FSP_SENSOR_FRAME_QUEUE_SIZE - fspState.sensorFrameQueueTail) %
-        FSP_SENSOR_FRAME_QUEUE_SIZE;
-    if (framesAvailable >= FSP_SENSOR_FRAME_BATCH_COUNT && fspTxFits(sizeof(fspPacketState_t))) {
+    // Send every queued capture that fits, so a late task run catches up instead of dropping later frames
+    while (fspState.sensorFrameQueueHead != fspState.sensorFrameQueueTail && fspTxFits(sizeof(fspPacketState_t))) {
         fspSendState();
+    }
+    if (cmpTimeUs(currentTimeUs, fspState.nextStatusUs) >= 0 && fspTxFits(sizeof(fspPacketStatus_t))) {
+        fspSendStatus(currentTimeUs);
+        fspState.nextStatusUs += fspState.statusIntervalUs;
+        // After a pause (lease expiry) restart the schedule instead of sending a burst
+        if (cmpTimeUs(currentTimeUs, fspState.nextStatusUs) >= 0) {
+            fspState.nextStatusUs = currentTimeUs + fspState.statusIntervalUs;
+        }
     }
 #ifdef FSP_ENABLE_MAVLINK
     fspSendMavlink();
@@ -403,14 +440,14 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     fspSensorFrame_t *frame = &fspState.sensorFrameQueue[fspState.sensorFrameQueueHead];
     fspState.sensorFrameQueueHead = (fspState.sensorFrameQueueHead + 1) % FSP_SENSOR_FRAME_QUEUE_SIZE;
 
-    frame->timestamp = currentTimeUs;
+    memset(frame, 0, sizeof(*frame)); // slots are reused; fields a build does not fill stay zero
     frame->pidTick = actions.pidTick;
+    frame->timestamp = currentTimeUs;
     fspActionsFrameState(&actions, frame);
 #if defined(ENABLE_PT2_FILTER_IMU) && ENABLE_PT2_FILTER_IMU
     frame->acc.x = lrintf(telemetryAcc.second[0]);
     frame->acc.y = lrintf(telemetryAcc.second[1]);
     frame->acc.z = lrintf(telemetryAcc.second[2]);
-    frame->acc1G = acc.dev.acc_1G;
     frame->gyro.x = lrintf(telemetryGyro.second[0] / gyro.scale);
     frame->gyro.y = lrintf(telemetryGyro.second[1] / gyro.scale);
     frame->gyro.z = lrintf(telemetryGyro.second[2] / gyro.scale);
@@ -418,22 +455,14 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->acc.x = lrintf(acc.accADCf.x);
     frame->acc.y = lrintf(acc.accADCf.y);
     frame->acc.z = lrintf(acc.accADCf.z);
-    frame->acc1G = acc.dev.acc_1G;
     frame->gyro.x = gyroRateDps(0);
     frame->gyro.y = gyroRateDps(1);
     frame->gyro.z = gyroRateDps(2);
 #endif
-    frame->gyroDpsLsb = gyro.scale;
-    frame->attitude.w = lrintf(imuAttitudeQuaternion.w * FSP_QUATERNION_SCALE);
-    frame->attitude.x = lrintf(imuAttitudeQuaternion.x * FSP_QUATERNION_SCALE);
-    frame->attitude.y = lrintf(imuAttitudeQuaternion.y * FSP_QUATERNION_SCALE);
-    frame->attitude.z = lrintf(imuAttitudeQuaternion.z * FSP_QUATERNION_SCALE);
     frame->rc.roll = lrintf(rcData[ROLL]);
     frame->rc.pitch = lrintf(rcData[PITCH]);
     frame->rc.yaw = lrintf(rcData[YAW]);
     frame->rc.throttle = lrintf(rcData[THROTTLE]);
-    frame->rc.aux3 = lrintf(rcData[AUX3]);
-    frame->rc.aux4 = lrintf(rcData[AUX4]);
 
 #if defined(ESC_XR8_PRO)
     escSensorData_t *esc = getEscSensorData(0);
@@ -446,16 +475,12 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     xr8ProTelemetryFrame_t *escFrame = (xr8ProTelemetryFrame_t *)escSensorXR8ProFrame();
     if (escFrame) {
         frame->rc.throttle = escFrame->reverse;
-        frame->rc.aux3 = escFrame->throttle1;
-        frame->rc.aux4 = escFrame->throttle2;
     }
 #elif defined(USE_DSHOT_TELEMETRY)
     for (int i = 0; i < 4; i++) {
         frame->rpm[i] = getDshotRpm(i);
     }
 #endif
-    frame->batteryVoltage = getBatteryVoltageLatest();
-    frame->batteryAmperage = constrain(getAmperageLatest(), INT16_MIN, INT16_MAX);
 }
 
 void fspActionPidTick(timeUs_t currentTimeUs)

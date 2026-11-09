@@ -1976,6 +1976,7 @@ const clivalue_t valueTable[] = {
     { PARAM_NAME_FSP_TELEMETRY_TIMEOUT_MS,   VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 50, 5000 }, PG_FSP_CONFIG, offsetof(fspConfig_t, telemetry_timeout_ms) },
     { PARAM_NAME_FSP_ACTION_TIMEOUT_MS,      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 2000 }, PG_FSP_CONFIG, offsetof(fspConfig_t, action_timeout_ms) },
     { PARAM_NAME_FSP_ACTION_MAX_AHEAD_TICKS, VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 4096 }, PG_FSP_CONFIG, offsetof(fspConfig_t, action_max_ahead_ticks) },
+    { PARAM_NAME_FSP_STATUS_HZ,              VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 200 }, PG_FSP_CONFIG, offsetof(fspConfig_t, status_hz) },
 #endif
 
 #ifdef USE_RX_FLYSKY

@@ -109,7 +109,9 @@ static void testAuthorityAndTimeout(void)
     assert(s.haveActive && !fspActionsOutputActive(&s));
     fspSensorFrame_t frame = {0};
     fspActionsFrameState(&s, &frame);
-    assert(frame.actionFlags == 0);
+    // Held without authority: no flags, but the mode and age of the action in effect are reported
+    assert(frame.actionFlags == (FSP_ACTION_MODE_RATES << FSP_ACTION_FLAG_MODE_SHIFT));
+    assert(frame.actionAge == 0);
 
     // Sensor frame state mirrors the active action
     a = action(s.pidTick + 2, FSP_ACTION_MODE_MOTORS);
@@ -120,9 +122,32 @@ static void testAuthorityAndTimeout(void)
     fspActionsTick(&s, s.lastTickUs + PERIOD_US, ALL);
     assert(fspActionsOutputActive(&s));
     fspActionsFrameState(&s, &frame);
-    assert(frame.actionTick == s.pidTick && frame.actionMode == FSP_ACTION_MODE_MOTORS);
-    assert(frame.actionFlags == (FSP_ACTION_FLAG_AUTHORITY | FSP_ACTION_FLAG_OUTPUT_ACTIVE));
+    assert(frame.actionAge == 0);
+    assert(frame.actionFlags == (FSP_ACTION_FLAG_AUTHORITY | FSP_ACTION_FLAG_OUTPUT_ACTIVE |
+                                 (FSP_ACTION_MODE_MOTORS << FSP_ACTION_FLAG_MODE_SHIFT)));
     assert(frame.queueDepth == 0);
+    fspPacketStatus_t status = {0};
+    fspActionsStatus(&s, &status);
+    assert(status.actionTick == s.pidTick && status.actionMode == FSP_ACTION_MODE_MOTORS);
+    assert(status.authority == ALL);
+
+    // The age counts ticks since the apply tick and saturates; the status keeps the exact tick
+    const uint32_t applied = s.pidTick;
+    for (unsigned i = 0; i < 300; i++) {
+        fspActionsTick(&s, s.lastTickUs + PERIOD_US, ALL);
+        fspActionsFrameState(&s, &frame);
+        const uint32_t age = s.pidTick - applied;
+        assert(frame.actionAge == (age >= FSP_ACTION_AGE_SATURATED ? FSP_ACTION_AGE_SATURATED : age));
+    }
+    fspActionsStatus(&s, &status);
+    assert(status.actionTick == applied);
+
+    // No action in effect
+    fspActionsInit(&s, TIMEOUT_US, MAX_AHEAD, PERIOD_US);
+    fspActionsFrameState(&s, &frame);
+    assert(frame.actionAge == FSP_ACTION_AGE_NONE && frame.actionFlags == 0);
+    fspActionsStatus(&s, &status);
+    assert(status.actionTick == 0 && status.actionMode == 0);
 }
 
 static void testRcImmediate(void)

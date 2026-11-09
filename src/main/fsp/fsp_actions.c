@@ -154,12 +154,24 @@ void fspActionsTick(fspActionScheduler_t *s, uint32_t nowUs, uint8_t authority)
 
 void fspActionsFrameState(const fspActionScheduler_t *s, fspSensorFrame_t *frame)
 {
-    frame->actionTick = s->haveActive ? s->active.applyTick : 0;
-    frame->actionMode = s->haveActive ? s->active.mode : 0;
+    const uint8_t mode = s->haveActive ? s->active.mode : 0;
     frame->actionFlags = (authorityAllows(s->authority) ? FSP_ACTION_FLAG_AUTHORITY : 0) |
                          (fspActionsOutputActive(s) ? FSP_ACTION_FLAG_OUTPUT_ACTIVE : 0) |
-                         (s->timedOut ? FSP_ACTION_FLAG_TIMED_OUT : 0);
+                         (s->timedOut ? FSP_ACTION_FLAG_TIMED_OUT : 0) |
+                         ((mode << FSP_ACTION_FLAG_MODE_SHIFT) & FSP_ACTION_FLAG_MODE_MASK);
+    if (s->haveActive) {
+        const uint32_t age = s->pidTick - s->active.applyTick;
+        frame->actionAge = age >= FSP_ACTION_AGE_SATURATED ? FSP_ACTION_AGE_SATURATED : (uint8_t)age;
+    } else {
+        frame->actionAge = FSP_ACTION_AGE_NONE;
+    }
     frame->queueDepth = s->count;
-    frame->reserved16 = 0;
     frame->reserved = 0;
+}
+
+void fspActionsStatus(const fspActionScheduler_t *s, fspPacketStatus_t *status)
+{
+    status->actionTick = s->haveActive ? s->active.applyTick : 0;
+    status->actionMode = s->haveActive ? s->active.mode : 0;
+    status->authority = s->authority;
 }

@@ -5,9 +5,9 @@
 
 #define FSP_ACTION_QUEUE_CAPACITY 4U
 
-// Authority levels passed to fspActionsTick
-#define FSP_AUTHORITY_RC (1U << 0)      // MSP override selected, radio healthy
-#define FSP_AUTHORITY_CONTROL (1U << 1) // armed, Acro, supported; rate and motor actions need both bits
+// Authority levels passed to fspActionsTick; reported as fspStatusAuthority_e
+#define FSP_AUTHORITY_RC FSP_STATUS_AUTHORITY_RC           // MSP override selected, radio healthy
+#define FSP_AUTHORITY_CONTROL FSP_STATUS_AUTHORITY_CONTROL // armed, Acro, supported; rate and motor actions need both bits
 
 typedef struct {
     fspPacketAction_t queue[FSP_ACTION_QUEUE_CAPACITY];
@@ -32,4 +32,7 @@ fspActionResult_e fspActionsEnqueue(fspActionScheduler_t *s, const fspPacketActi
 void fspActionsTick(fspActionScheduler_t *s, uint32_t nowUs, uint8_t authority);
 // The active action may drive its outputs (authority sufficient for its mode).
 bool fspActionsOutputActive(const fspActionScheduler_t *s);
+// Per-capture action state: flags with the mode, age of the action in effect and queue depth.
 void fspActionsFrameState(const fspActionScheduler_t *s, fspSensorFrame_t *frame);
+// Exact tick and mode of the action in effect and the authority bits, for the status packet.
+void fspActionsStatus(const fspActionScheduler_t *s, fspPacketStatus_t *status);
