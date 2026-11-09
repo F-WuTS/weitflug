@@ -113,7 +113,6 @@
 #include "pg/rcdevice.h"
 #include "pg/stats.h"
 #include "pg/board.h"
-#include "pg/fsp.h"
 
 #include "rx/a7105_flysky.h"
 #include "rx/cc2500_frsky_common.h"
@@ -1969,13 +1968,6 @@ const clivalue_t valueTable[] = {
     { PARAM_NAME_ACC_RPM_FILTER_MIN_HZ,        VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 30, 200 }, PG_ACC_RPM_FILTER_CONFIG, offsetof(rpmFilterConfig_t, rpm_filter_min_hz) },
     { PARAM_NAME_ACC_RPM_FILTER_FADE_RANGE_HZ, VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1000 }, PG_ACC_RPM_FILTER_CONFIG, offsetof(rpmFilterConfig_t, rpm_filter_fade_range_hz) },
     { PARAM_NAME_ACC_RPM_FILTER_LPF_HZ,        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 100, 500 }, PG_ACC_RPM_FILTER_CONFIG, offsetof(rpmFilterConfig_t, rpm_filter_lpf_hz) },
-#endif
-
-#ifdef USE_FSP
-    { PARAM_NAME_FSP_TELEMETRY_HZ,           VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 50, 4000 }, PG_FSP_CONFIG, offsetof(fspConfig_t, telemetry_hz) },
-    { PARAM_NAME_FSP_TELEMETRY_TIMEOUT_MS,   VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 50, 5000 }, PG_FSP_CONFIG, offsetof(fspConfig_t, telemetry_timeout_ms) },
-    { PARAM_NAME_FSP_ACTION_TIMEOUT_MS,      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 2000 }, PG_FSP_CONFIG, offsetof(fspConfig_t, action_timeout_ms) },
-    { PARAM_NAME_FSP_ACTION_MAX_AHEAD_TICKS, VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 4096 }, PG_FSP_CONFIG, offsetof(fspConfig_t, action_max_ahead_ticks) },
 #endif
 
 #ifdef USE_RX_FLYSKY

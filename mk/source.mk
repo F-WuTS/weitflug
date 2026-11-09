@@ -14,7 +14,6 @@ PG_SRC = \
             pg/displayport_profiles.c \
             pg/dyn_notch.c \
             pg/flash.c \
-            pg/fsp.c \
             pg/gimbal.c \
             pg/gps.c \
             pg/gps_lap_timer.c \
@@ -140,7 +139,6 @@ COMMON_SRC = \
             msp/msp_push.c \
             fsp/fsp_cobs.c \
             fsp/fsp.c \
-            fsp/fsp_actions.c \
             scheduler/scheduler.c \
             sensors/adcinternal.c \
             sensors/battery.c \

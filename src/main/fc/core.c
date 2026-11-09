@@ -1402,13 +1402,7 @@ FAST_CODE void taskMainPidLoop(timeUs_t currentTimeUs)
     // 3 - subTaskPidSubprocesses()
     DEBUG_SET(DEBUG_PIDLOOP, 0, micros() - currentTimeUs);
 
-#ifdef USE_FSP
-    fspActionPidTick(currentTimeUs);
-#endif
     subTaskRcCommand(currentTimeUs);
-#ifdef USE_FSP
-    if (!fspActionBypassPid())
-#endif
     subTaskPidController(currentTimeUs);
     subTaskMotorUpdate(currentTimeUs);
     subTaskPidSubprocesses(currentTimeUs);

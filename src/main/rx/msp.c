@@ -26,7 +26,6 @@
 #ifdef USE_RX_MSP
 
 #include "common/utils.h"
-#include "drivers/time.h"
 
 #include "drivers/io.h"
 #include "pg/rx.h"
@@ -35,8 +34,6 @@
 
 static uint16_t mspFrame[MAX_SUPPORTED_RC_CHANNEL_COUNT];
 static bool rxMspFrameDone = false;
-static timeUs_t lastMspFrameTimeUs;
-static bool haveMspFrame = false;
 static bool rxMspOverrideFrameDone = false;
 
 float rxMspReadRawRC(const rxRuntimeState_t *rxRuntimeState, uint8_t chan)
@@ -59,8 +56,6 @@ void rxMspFrameReceive(const uint16_t *frame, int channelCount)
         mspFrame[i] = 0;
     }
 
-    lastMspFrameTimeUs = micros();
-    haveMspFrame = true;
     rxMspFrameDone = true;
     rxMspOverrideFrameDone = true;
 }
@@ -78,11 +73,6 @@ static uint8_t rxMspFrameStatus(rxRuntimeState_t *rxRuntimeState)
 }
 
 #if defined(USE_RX_MSP_OVERRIDE)
-bool rxMspOverrideIsFresh(void)
-{
-    return haveMspFrame && (uint32_t)(micros() - lastMspFrameTimeUs) < 200000U;
-}
-
 uint8_t rxMspOverrideFrameStatus(void)
 {
     if (!rxMspOverrideFrameDone) {
