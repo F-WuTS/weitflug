@@ -3,6 +3,7 @@
 
 #include "fsp/fsp.h"
 #include "drivers/time.h"
+#include "fc/rc.h"
 #include "fsp/fsp_cobs.h"
 #include "fsp/fsp_frame.h"
 #include "fsp/fsp_actions.h"
@@ -459,10 +460,13 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->gyro.y = gyroRateDps(1);
     frame->gyro.z = gyroRateDps(2);
 #endif
-    frame->rc.roll = lrintf(rcData[ROLL]);
-    frame->rc.pitch = lrintf(rcData[PITCH]);
-    frame->rc.yaw = lrintf(rcData[YAW]);
-    frame->rc.throttle = lrintf(rcData[THROTTLE]);
+    for (unsigned i = 0; i < 3; i++) {
+        frame->setpoints[i] = lrintf(pidGetPreviousSetpoint(i) * 10.0f);
+    }
+    frame->setpoints[3] = lrintf(mixerGetThrottle() * 10000.0f);
+    for (unsigned i = 0; i < 4; i++) {
+        frame->motor[i] = lrintf(motor[i] * 10000.0f);
+    }
 
 #if defined(ESC_XR8_PRO)
     escSensorData_t *esc = getEscSensorData(0);

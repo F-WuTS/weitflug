@@ -8,7 +8,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#define FSP_VERSION 0x09
+#define FSP_VERSION 0x10
 #define FSP_MAVLINK_TUNNEL_SIZE 64
 #define FSP_MAX_PAYLOAD_SIZE FSP_MAVLINK_TUNNEL_SIZE // largest payload of any packet type
 #define FSP_CRC_POLY 0xD5
@@ -102,7 +102,8 @@ typedef struct {
     uint32_t timestamp; // PID snapshot time, FC us
     fspVec_t acc;
     fspVec_t gyro;
-    fspRc_t rc;          // receiver-selected rcData (MSP override applied)
+    uint16_t setpoints[4]; // roll, pitch, yaw (0.1 deg/s), throttle (0..10000)
+    uint16_t motor[4]; // motor output 0..10000
     uint16_t rpm[4];
     uint8_t actionFlags; // fspActionFlag_e bits, action mode in FSP_ACTION_FLAG_MODE_MASK
     uint8_t actionAge;   // pidTick - applyTick of the scheduled action in effect, see FSP_ACTION_AGE_*
@@ -158,9 +159,9 @@ typedef struct {
 
 // Wire sizes; host and FC both rely on natural alignment without padding.
 static_assert(sizeof(fspPacketHeader_t) == 8, "header wire size");
-static_assert(sizeof(fspSensorFrame_t) == 40, "sensor frame wire size");
-static_assert(offsetof(fspSensorFrame_t, actionFlags) == 36, "sensor frame action offset");
-static_assert(sizeof(fspPacketState_t) == 40, "state wire size");
+static_assert(sizeof(fspSensorFrame_t) == 48, "sensor frame wire size");
+static_assert(offsetof(fspSensorFrame_t, actionFlags) == 44, "sensor frame action offset");
+static_assert(sizeof(fspPacketState_t) == 48, "state wire size");
 static_assert(sizeof(fspPacketStatus_t) == 36, "status wire size");
 static_assert(offsetof(fspPacketStatus_t, gyroDpsLsb) == 24, "status scale offset");
 static_assert(sizeof(fspPacketAction_t) == 16, "action wire size");
