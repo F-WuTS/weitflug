@@ -843,7 +843,12 @@ bool processRx(timeUs_t currentTimeUs)
 
     // Note: If Airmode is enabled, on arming, iTerm and PIDs will be off until throttle exceeds the threshold (OFF while disarmed)
     // If not, iTerm will be off at low throttle, with pidStabilisationState determining whether PIDs will be active
-    if (ARMING_FLAG(ARMED) && (isAirmodeActive || throttleActive || launchControlActive || isFixedWing())) {
+#ifdef USE_FSP
+    float fspCollective = 0.0f;
+    const bool fspThrottleActive = fspActionCollective(&fspCollective) && fspCollective > 0.0f;
+#endif
+
+    if (ARMING_FLAG(ARMED) && (isAirmodeActive || throttleActive || fspThrottleActive || launchControlActive || isFixedWing())) {
         pidSetItermReset(false);
         pidStabilisationState(PID_STABILISATION_ON);
     } else {
