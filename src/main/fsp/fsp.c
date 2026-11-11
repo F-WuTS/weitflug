@@ -29,7 +29,6 @@
 #include "sensors/acceleration.h"
 #include "sensors/battery.h"
 #include "sensors/esc_sensor_xr8pro.h"
-#include "sensors/gyro_init.h"
 #include "pg/fsp.h"
 
 #include "platform.h"
@@ -419,6 +418,13 @@ bool fspFrameDue(timeUs_t currentTimeUs)
 }
 #endif
 
+static int16_t encodeGyro(int axis)
+{
+    float counts = gyro.gyroADCf[axis] / gyro.rawSensorDev->scale;
+    counts = constrainf(counts, (float)INT16_MIN, (float)INT16_MAX);
+    return (int16_t)lrintf(counts);
+}
+
 void fspPushSensorFrame(timeUs_t currentTimeUs)
 {
     if (!fspState.telemetryEnabled || !fspFrameDue(currentTimeUs)) {
@@ -455,9 +461,9 @@ void fspPushSensorFrame(timeUs_t currentTimeUs)
     frame->acc.x = lrintf(acc.accADCf.x);
     frame->acc.y = lrintf(acc.accADCf.y);
     frame->acc.z = lrintf(acc.accADCf.z);
-    frame->gyro.x = gyroRateDps(0);
-    frame->gyro.y = gyroRateDps(1);
-    frame->gyro.z = gyroRateDps(2);
+    frame->gyro.x = encodeGyro(0);
+    frame->gyro.y = encodeGyro(1);
+    frame->gyro.z = encodeGyro(2);
 #endif
     frame->rc.roll = lrintf(rcData[ROLL]);
     frame->rc.pitch = lrintf(rcData[PITCH]);
